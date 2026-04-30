@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Sign Up - Deepfake Defender</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root{--bg:#070b1d;--card:#0f172a;--line:rgba(148,163,184,.18);--text:#f8fafc;--muted:#94a3b8;--accent:#10b981;--cyan:#06b6d4;--danger:#ef4444}
+    *{box-sizing:border-box;font-family:Segoe UI,system-ui,Inter,Arial,sans-serif}
+    body{margin:0;min-height:100vh;color:var(--text);background:radial-gradient(circle at 80% 10%,rgba(6,182,212,.15),transparent 30%),linear-gradient(180deg,#0a0e27,#050812)}
+    header{position:sticky;top:0;z-index:5;background:rgba(5,8,18,.78);backdrop-filter:blur(18px);border-bottom:1px solid var(--line)}
+    .header-inner{max-width:1180px;margin:auto;padding:16px 22px;display:flex;align-items:center;justify-content:space-between;gap:18px}
+    .brand{display:flex;align-items:center;gap:12px;text-decoration:none;color:var(--text)}.brand img{width:44px;height:44px;border-radius:12px}.brand h1{font-size:18px;margin:0}.brand p{margin:2px 0 0;color:var(--muted);font-size:12px}
+    .nav-link{color:var(--text);text-decoration:none;border:1px solid var(--line);padding:10px 14px;border-radius:10px;background:rgba(255,255,255,.03)}
+    main{max-width:980px;margin:42px auto;padding:0 18px;display:grid;grid-template-columns:1fr 430px;gap:28px;align-items:center}
+    .hero,.card{border-radius:22px;border:1px solid var(--line);background:rgba(15,23,42,.72);box-shadow:0 20px 70px rgba(0,0,0,.38)}
+    .hero{padding:34px}.card{padding:30px;background:rgba(15,23,42,.9)}
+    .hero h2{font-size:38px;line-height:1.1;margin:0 0 14px}.hero p,.subtitle{color:var(--muted);line-height:1.7}
+    h2{margin:0 0 8px;font-size:28px}.subtitle{margin:0 0 18px}
+    label{display:block;margin:14px 0 8px;color:#dbeafe;font-weight:650;font-size:13px}
+    input{width:100%;border:1px solid var(--line);background:rgba(255,255,255,.05);color:var(--text);padding:13px 14px;border-radius:12px;font-size:14px;outline:none}
+    input:focus{border-color:var(--accent);box-shadow:0 0 0 4px rgba(16,185,129,.12)}
+    .hint{font-size:12px;color:var(--muted);margin-top:6px}.strength{height:5px;background:rgba(255,255,255,.08);border-radius:99px;overflow:hidden;margin-top:8px}.bar{height:100%;width:0;background:var(--danger);transition:.2s}
+    .btn{width:100%;border:0;border-radius:12px;padding:13px 16px;margin-top:18px;font-weight:800;cursor:pointer;color:#fff;background:linear-gradient(135deg,var(--accent),var(--cyan));box-shadow:0 14px 28px rgba(16,185,129,.22)}
+    .msg{display:none;margin:14px 0 0;padding:12px;border-radius:12px;font-size:13px;border:1px solid}.msg.error{display:block;color:#fecaca;background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.35)}.msg.success{display:block;color:#bbf7d0;background:rgba(16,185,129,.12);border-color:rgba(16,185,129,.35)}
+    .links{text-align:center;color:var(--muted);font-size:13px;margin-top:18px}.links a{color:#5eead4;text-decoration:none}
+    @media(max-width:860px){main{grid-template-columns:1fr}.hero{display:none}}
+  </style>
+</head>
+<body>
+  <header><div class="header-inner">
+    <a class="brand" href="index.html"><img src="/static/logo11.png" alt="Logo"><span><h1>Deepfake Defender</h1><p>AI video authenticity platform</p></span></a>
+    <a class="nav-link" href="index.html">Back to App</a>
+  </div></header>
+  <main>
+    <section class="hero">
+      <h2>Create a real account, not demo storage.</h2>
+      <p>Your account is stored server-side with secure password hashing, analysis history, and future subscription support.</p>
+    </section>
+    <section class="card">
+      <h2>Create Account</h2>
+      <p class="subtitle">Start with free analyses and keep your results organized.</p>
+      <form id="signupForm">
+        <label for="name">Full Name</label>
+        <input id="name" type="text" autocomplete="name" placeholder="Your name" required>
+        <label for="email">Email Address</label>
+        <input id="email" type="email" autocomplete="email" placeholder="you@example.com" required>
+        <label for="password">Password</label>
+        <input id="password" type="password" autocomplete="new-password" placeholder="At least 8 characters" required>
+        <div class="strength"><div class="bar" id="bar"></div></div><div class="hint" id="hint">Use 8+ chars with letters and numbers.</div>
+        <label for="confirm">Confirm Password</label>
+        <input id="confirm" type="password" autocomplete="new-password" placeholder="Repeat password" required>
+        <button class="btn" type="submit">Create Account</button>
+        <div id="msg" class="msg"></div>
+      </form>
+      <div class="links">Already registered? <a href="login.html">Sign in</a></div>
+    </section>
+  </main>
+  <script>
+    const msg = document.getElementById("msg"), bar = document.getElementById("bar"), hint = document.getElementById("hint");
+    function show(message, type="error"){ msg.className = "msg " + type; msg.textContent = message; }
+    password.addEventListener("input", ()=>{
+      const v = password.value; let score = 0;
+      if(v.length >= 8) score += 35; if(/[A-Za-z]/.test(v)) score += 25; if(/\d/.test(v)) score += 25; if(/[^A-Za-z0-9]/.test(v)) score += 15;
+      bar.style.width = score + "%"; bar.style.background = score < 45 ? "#ef4444" : score < 75 ? "#f59e0b" : "#10b981";
+      hint.textContent = score < 75 ? "Add numbers or symbols for a stronger password." : "Strong password.";
+    });
+    document.getElementById("signupForm").addEventListener("submit", async (e)=>{
+      e.preventDefault();
+      if(password.value !== confirm.value){ show("Passwords do not match."); return; }
+      show("Creating account...", "success");
+      const resp = await fetch("/api/auth/signup", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({
+        name: name.value.trim(), email: email.value.trim(), password: password.value
+      })});
+      const data = await resp.json().catch(()=>({error:"Unexpected server response"}));
+      if(!resp.ok || !data.ok){ show(data.error || "Signup failed."); return; }
+      show("Account created. Redirecting...", "success");
+      setTimeout(()=>{ window.location.href = "index.html"; }, 700);
+    });
+  </script>
+</body>
+</html>

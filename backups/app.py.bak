@@ -1,0 +1,1213 @@
+# app.py
+import os
+import uuid
+import shutil
+import csv
+import subprocess
+from collections import deque
+
+from flask import Flask, request, jsonify, send_from_directory, abort
+from werkzeug.utils import secure_filename
+
+import cv2
+import torch
+import numpy as np
+from timm import create_model
+from facenet_pytorch import MTCNN
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
+
+# ---------------- CONFIG ----------------
+MODEL_FILENAME = "model_convnext.pth"   # put your trained checkpoint here
+ALLOWED_EXT = {"mp4", "mov", "avi", "mkv", "webm"}
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# class indices (update if your model uses different ordering)
+FAKE_CLASS_IDX = 0
+REAL_CLASS_IDX = 1
+
+# Sliding-window thresholds
+# NOTE: I left your values unchanged per your request
+LOW_FPS_THRESHOLD = 0.30
+HIGH_FPS_THRESHOLD = 0.35
+FPS_SPLIT = 12
+
+MTNN_MIN_FACE_PROB = 0.70  # min face prob accepted from MTCNN (kept for legacy usage)
+
+# ---------------- Robust inference / decision-fusion config ----------------
+# Soft multi-class thresholds on conf_fake
+FAKE_THRESHOLD = 0.45
+SUSPICIOUS_THRESHOLD = 0.30
+
+# If |conf_fake - conf_real| < this, treat the frame as ambiguous (SUSPICIOUS)
+LOW_CONF_GAP_THRESHOLD = 0.10
+
+# Below this MTCNN face probability we no longer skip the frame; we mark it suspicious
+LOW_FACE_PROB_THRESHOLD = 0.70
+
+# Per-frame score contributions (added on top of conf_fake)
+FAKE_BASE_SCORE = 0.7
+SUSPICIOUS_BASE_SCORE = 0.3
+LOW_FACE_CONF_SCORE = 0.2
+LOW_VARIATION_SCORE = 0.5
+
+# Temporal consistency: every N consecutive FAKE/SUSPICIOUS frames adds a boost
+TEMPORAL_CONSEC_FRAMES = 3
+TEMPORAL_BOOST_SCORE = 1.5
+
+# Frame similarity (mean abs pixel diff of small grayscale face crops, range 0..255).
+# AI-generated videos tend to look unnaturally smooth between consecutive frames.
+SIMILARITY_GRAY_SIZE = 64
+SIMILARITY_DIFF_THRESHOLD = 2.0
+
+# Stability: if conf_fake variance across the whole video is tiny AND the mean is not
+# clearly real, suspect AI smoothness and add a global boost.
+STABILITY_VAR_THRESHOLD = 0.002
+STABILITY_MEAN_FAKE_FLOOR = 0.20
+STABILITY_GLOBAL_SCORE = 2.0
+STABILITY_MIN_FRAMES = 5
+
+# Weighted sliding-window values
+WEIGHT_FAKE = 1.0
+WEIGHT_SUSPICIOUS = 0.5
+WEIGHT_REAL = 0.0
+
+# Final fusion thresholds
+FINAL_FAKE_SCORE_THRESHOLD = 0.5
+SUSPICIOUS_RATIO_FAKE_THRESHOLD = 0.4
+
+# Confidence-level output thresholds
+HIGH_FAKE_LEVEL_THRESHOLD = 0.7
+UNCERTAIN_SUSP_RATIO_THRESHOLD = 0.3
+
+# Early-stop (analyze_video) tunables
+EARLY_STOP_WINDOW = 10
+EARLY_STOP_MIN_FRAMES = 8
+EARLY_STOP_WEIGHTED_RATIO = 0.7
+
+# directories
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
+OUTPUT_DIR = os.path.join(BASE_DIR, "outputs")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+# ---------------- model loading ----------------
+def load_model():
+    model_path = os.path.join(BASE_DIR, MODEL_FILENAME)
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(f"Model checkpoint not found at {model_path}")
+    model = create_model('convnext_base', pretrained=False, num_classes=2).to(DEVICE)
+    state = torch.load(model_path, map_location=DEVICE)
+    # handle common wrapper dicts
+    if isinstance(state, dict) and 'state_dict' in state:
+        state = state['state_dict']
+    if isinstance(state, dict):
+        new_state = {}
+        for k, v in state.items():
+            nk = k.replace('module.', '') if isinstance(k, str) and k.startswith('module.') else k
+            new_state[nk] = v
+        model.load_state_dict(new_state)
+    else:
+        model.load_state_dict(state)
+    model.eval()
+    return model
+
+MODEL = None
+try:
+    MODEL = load_model()
+    print("Model loaded successfully.")
+except Exception as ex:
+    print("Warning: model not loaded at startup:", ex)
+    MODEL = None
+
+# ---------------- transforms & helpers ----------------
+transform = A.Compose([
+    A.Resize(224, 224),
+    A.Normalize([0.485,0.456,0.406],[0.229,0.224,0.225]),
+    ToTensorV2()
+])
+
+def get_mtcnn():
+    return MTCNN(image_size=224, margin=20, post_process=False, device=DEVICE)
+
+def allowed_file(filename):
+    return "." in filename and filename.rsplit(".",1)[1].lower() in ALLOWED_EXT
+
+def save_csv(records, path):
+    """
+    Persist per-frame predictions. Columns kept backward-compatible; a `reasons`
+    column is appended for explainability (pipe-separated tags).
+    """
+    fieldnames = ["frame", "label", "conf_fake", "conf_real", "face_prob", "reasons"]
+    with open(path, "w", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=fieldnames)
+        writer.writeheader()
+        for r in records:
+            reasons = r.get("reasons")
+            if isinstance(reasons, list):
+                reasons = "|".join(reasons)
+            writer.writerow({
+                "frame": r.get("frame"),
+                "label": r.get("label"),
+                "conf_fake": r.get("conf_fake") if r.get("conf_fake") is not None else "",
+                "conf_real": r.get("conf_real") if r.get("conf_real") is not None else "",
+                "face_prob": r.get("face_prob") if r.get("face_prob") is not None else "",
+                "reasons": reasons if reasons is not None else "",
+            })
+
+
+# ---------------- Inference helpers (modular, lightweight numpy only) ----------------
+def detect_face_crop(rgb_frame, mtcnn):
+    """
+    Try MTCNN.detect first (returns bbox + prob), fall back to MTCNN aligned crop.
+    Does NOT skip on low face_prob — caller decides what to do with weak detections.
+
+    Returns (face_crop_rgb, face_prob) or (None, None) when no face is found at all.
+    """
+    try:
+        boxes, probs = mtcnn.detect(rgb_frame, landmarks=False)
+    except Exception:
+        boxes, probs = None, None
+
+    if boxes is not None and probs is not None and len(boxes) > 0:
+        best_idx = int(np.argmax(probs))
+        face_prob = float(probs[best_idx])
+        x1, y1, x2, y2 = boxes[best_idx].astype(int)
+        h, w = rgb_frame.shape[:2]
+        x1, y1 = max(0, x1), max(0, y1)
+        x2, y2 = min(w - 1, x2), min(h - 1, y2)
+        if x2 - x1 > 5 and y2 - y1 > 5:
+            return rgb_frame[y1:y2, x1:x2], face_prob
+
+    try:
+        face_tensor = mtcnn(rgb_frame)
+        if face_tensor is not None:
+            face_np = face_tensor.permute(1, 2, 0).cpu().numpy().astype(np.uint8)
+            return face_np, 1.0
+    except Exception:
+        pass
+
+    return None, None
+
+
+def predict_frame(face_crop, model):
+    """Run model on an RGB face crop. Returns (conf_fake, conf_real, pred_idx) or None on error."""
+    try:
+        inp = transform(image=face_crop)['image'].unsqueeze(0).to(DEVICE)
+    except Exception:
+        return None
+    with torch.no_grad():
+        out = model(inp)
+        probs_out = torch.softmax(out, dim=1)[0]
+        conf_fake = float(probs_out[FAKE_CLASS_IDX].item())
+        conf_real = float(probs_out[REAL_CLASS_IDX].item())
+        pred_idx = int(torch.argmax(probs_out).item())
+    return conf_fake, conf_real, pred_idx
+
+
+def classify_frame(conf_fake, conf_real, face_prob):
+    """
+    Soft multi-class decision (FAKE / SUSPICIOUS / REAL) with explainability tags.
+
+    Order of operations:
+      1. base label from conf_fake thresholds
+      2. low confidence-gap downgrade (REAL -> SUSPICIOUS)
+      3. low face-confidence downgrade (REAL -> SUSPICIOUS)
+
+    Score is intentionally NOT computed here; caller composes it after temporal /
+    similarity checks so flag-driven score additions stay in one place.
+
+    Returns (label, reasons_list, flags_dict).
+    """
+    reasons = []
+    flags = {"low_conf_gap": False, "low_face_conf": False}
+
+    if conf_fake >= FAKE_THRESHOLD:
+        label = "FAKE"
+        reasons.append("threshold_fake")
+    elif conf_fake >= SUSPICIOUS_THRESHOLD:
+        label = "SUSPICIOUS"
+        reasons.append("threshold_suspicious")
+    else:
+        label = "REAL"
+        reasons.append("threshold_real")
+
+    if abs(conf_fake - conf_real) < LOW_CONF_GAP_THRESHOLD:
+        flags["low_conf_gap"] = True
+        reasons.append("low_confidence_gap")
+        if label == "REAL":
+            label = "SUSPICIOUS"
+
+    if face_prob is not None and face_prob < LOW_FACE_PROB_THRESHOLD:
+        flags["low_face_conf"] = True
+        reasons.append("low_face_conf")
+        if label == "REAL":
+            label = "SUSPICIOUS"
+
+    return label, reasons, flags
+
+
+def compute_face_gray(face_crop, size=SIMILARITY_GRAY_SIZE):
+    """Cheap fixed-size grayscale of a face crop, for temporal-similarity comparison."""
+    if face_crop is None:
+        return None
+    try:
+        gray = cv2.cvtColor(face_crop, cv2.COLOR_RGB2GRAY)
+        gray = cv2.resize(gray, (size, size))
+        return gray.astype(np.float32)
+    except Exception:
+        return None
+
+
+def frame_similarity_diff(curr_gray, prev_gray):
+    """Mean absolute pixel difference between two same-shape grayscale faces (0..255)."""
+    if curr_gray is None or prev_gray is None or curr_gray.shape != prev_gray.shape:
+        return None
+    return float(np.mean(np.abs(curr_gray - prev_gray)))
+
+
+def compute_frame_score(label, conf_fake, low_face_conf, low_variation, temporal_boost):
+    """
+    Compose a single frame's contribution to the global score from all signals.
+
+      score = conf_fake
+            + (FAKE_BASE_SCORE if label==FAKE else SUSPICIOUS_BASE_SCORE if label==SUSPICIOUS else 0)
+            + (LOW_FACE_CONF_SCORE  if low_face_conf  else 0)
+            + (LOW_VARIATION_SCORE  if low_variation  else 0)
+            + (TEMPORAL_BOOST_SCORE if temporal_boost else 0)
+    """
+    s = float(conf_fake)
+    if label == "FAKE":
+        s += FAKE_BASE_SCORE
+    elif label == "SUSPICIOUS":
+        s += SUSPICIOUS_BASE_SCORE
+    if low_face_conf:
+        s += LOW_FACE_CONF_SCORE
+    if low_variation:
+        s += LOW_VARIATION_SCORE
+    if temporal_boost:
+        s += TEMPORAL_BOOST_SCORE
+    return s
+
+
+def compute_confidence_level(final_score, suspicious_ratio):
+    """Human-readable confidence bucket for the final fused decision."""
+    if final_score > HIGH_FAKE_LEVEL_THRESHOLD:
+        return "HIGH_FAKE"
+    if final_score > FINAL_FAKE_SCORE_THRESHOLD:
+        return "MODERATE_FAKE"
+    if suspicious_ratio > UNCERTAIN_SUSP_RATIO_THRESHOLD:
+        return "UNCERTAIN"
+    return "REAL"
+
+
+def fuse_final_decision(processed_frames, final_score, suspicious_ratio, has_segments=False):
+    """
+    Multi-factor fusion. Any of the following triggers FAKE:
+      - sliding-window found at least one manipulated segment
+      - final_score >= FINAL_FAKE_SCORE_THRESHOLD
+      - suspicious_ratio >= SUSPICIOUS_RATIO_FAKE_THRESHOLD
+    """
+    if processed_frames == 0:
+        return "unknown (no face detected in video)"
+    if has_segments:
+        return "FAKE"
+    if final_score >= FINAL_FAKE_SCORE_THRESHOLD:
+        return "FAKE"
+    if suspicious_ratio >= SUSPICIOUS_RATIO_FAKE_THRESHOLD:
+        return "FAKE"
+    return "REAL"
+
+
+def stability_check(conf_fake_list):
+    """
+    Detect AI-smooth model output via low variance of conf_fake. Only flagged when
+    the mean is not clearly in the REAL zone, to avoid false positives on truly real videos.
+
+    Returns (variance, triggered_bool).
+    """
+    if len(conf_fake_list) < STABILITY_MIN_FRAMES:
+        return 0.0, False
+    arr = np.asarray(conf_fake_list, dtype=np.float32)
+    variance = float(np.var(arr))
+    mean_cf = float(np.mean(arr))
+    triggered = variance < STABILITY_VAR_THRESHOLD and mean_cf >= STABILITY_MEAN_FAKE_FLOOR
+    return variance, triggered
+
+
+def weighted_sliding_window_segments(weighted_preds, fps, fake_ratio):
+    """
+    Sliding window over weighted per-frame scores (FAKE=1, SUSPICIOUS=0.5, REAL=0).
+    A window is flagged when its weighted sum >= window * fake_ratio. Returns merged
+    list of (start_frame, end_frame) inclusive intervals.
+    """
+    N = len(weighted_preds)
+    if N == 0:
+        return []
+    window = max(1, int(round(fps)))
+    min_score = float(window) * float(fake_ratio)
+    found = []
+    arr = np.asarray(weighted_preds, dtype=np.float32)
+    for i in range(0, N - window + 1):
+        if float(arr[i:i + window].sum()) >= min_score:
+            found.append((i, i + window - 1))
+    return merge_intervals(found)
+
+
+def format_frame_log(frame_no, label, conf_fake, conf_real, face_prob, reasons):
+    """Consistent per-frame log line used by both pipelines."""
+    fp = face_prob if face_prob is not None else 0.0
+    return (
+        f"Frame {frame_no}: {label} "
+        f"(conf_fake={conf_fake:.3f}, conf_real={conf_real:.3f}, "
+        f"face_prob={fp:.2f}, reasons={'|'.join(reasons)})"
+    )
+
+def merge_intervals(intervals):
+    """Merge inclusive [s,e] intervals; input list of (s,e). Returns merged list."""
+    if not intervals:
+        return []
+    intervals = sorted(intervals, key=lambda x: x[0])
+    merged = [list(intervals[0])]
+    for s,e in intervals[1:]:
+        last = merged[-1]
+        if s <= last[1] + 1:
+            last[1] = max(last[1], e)
+        else:
+            merged.append([s,e])
+    return [(a,b) for a,b in merged]
+
+def sliding_window_segments(preds_by_frame, fps, fake_ratio):
+    """
+    preds_by_frame: list or 1D np array of 0/1 indexed by absolute frame number (0..N-1).
+    fps: integer frames per second.
+    fake_ratio: threshold fraction (0..1) required inside the window to mark window manipulated.
+    Returns list of (start_frame, end_frame) windows (inclusive) where detection occurs.
+    """
+    N = len(preds_by_frame)
+    if N == 0:
+        return []
+    window = max(1, int(round(fps)))
+    min_fake = max(1, int(round(window * fake_ratio)))
+    found = []
+    # sliding window over absolute frames (frame i .. i+window-1)
+    for i in range(0, N - window + 1):
+        count = int(np.sum(preds_by_frame[i:i+window]))
+        if count >= min_fake:
+            found.append((i, i+window-1))
+    # merge found windows into contiguous segments
+    merged = merge_intervals(found)
+    return merged
+
+# ---------------- FFmpeg helper (to produce browser-playable mp4/h264) ----------------
+def extract_clip_ffmpeg(input_video, start_frame, end_frame, fps, output_path):
+    """Extract a video clip using FFmpeg with proper error handling for Windows paths."""
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+    start_sec = start_frame / float(fps)
+    duration = (end_frame - start_frame + 1) / float(fps)
+
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-ss", str(start_sec),
+        "-i", input_video,
+        "-t", str(duration),
+        "-c:v", "libx264",
+        "-preset", "fast",
+        "-pix_fmt", "yuv420p",
+        "-movflags", "+faststart",
+        "-an",
+        output_path
+    ]
+
+    try:
+        # capture stderr so we can see ffmpeg messages in terminal
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
+        if result.returncode != 0:
+            print(f"FFmpeg failed for frames {start_frame}-{end_frame}:")
+            print(result.stderr)
+            return False
+        else:
+            print(f"Clip created: frames {start_frame}-{end_frame} -> {output_path}")
+            return True
+    except FileNotFoundError:
+        print("ERROR: FFmpeg not found in PATH. Please install FFmpeg.")
+        return False
+    except Exception as e:
+        print(f"FFmpeg execution error: {e}")
+        return False
+
+# ---------------- EARLY detection (multi-factor scoring + weighted early-stop) ----------------
+def analyze_video(video_path, output_subdir):
+    """
+    Early-stop deepfake detection with robust decision fusion.
+
+    Pipeline per frame:
+      1. detect_face_crop()          -> face_crop + face_prob (no skip on low prob)
+      2. predict_frame()             -> conf_fake / conf_real
+      3. classify_frame()            -> soft label FAKE / SUSPICIOUS / REAL + reason tags
+      4. similarity vs previous gray -> "low_temporal_variation" downgrade
+      5. consecutive-frames boost    -> "temporal_boost" every TEMPORAL_CONSEC_FRAMES
+      6. compose frame_score, push weighted entry into early-stop ring buffer
+
+    A global stability check (variance of conf_fake) runs at the end, then the final
+    decision is fused from final_score and suspicious_ratio. Backward compatible
+    response keys are preserved; new explainability fields are added on top.
+    """
+    global MODEL
+    if MODEL is None:
+        MODEL = load_model()
+    mtcnn = get_mtcnn()
+
+    cap = cv2.VideoCapture(video_path)
+    suspicious_dir = os.path.join(output_subdir, "suspicious_frames")
+    os.makedirs(suspicious_dir, exist_ok=True)
+
+    logs = []
+    records = []
+    suspicious_files = []
+
+    # Counters
+    fake_count = 0
+    suspicious_count = 0
+    real_count = 0
+    low_conf_gap_count = 0
+    low_face_conf_count = 0
+    temporal_boost_count = 0
+    low_variation_count = 0
+    processed_face_frames = 0
+
+    # Running aggregates
+    score = 0.0
+    consecutive_counter = 0
+    prev_gray = None
+    conf_fake_list = []
+
+    weighted_window = deque(maxlen=EARLY_STOP_WINDOW)
+    early_stop_triggered = False
+    early_stop_frame_idx = None
+
+    frame_no = 0
+    while True:
+        ret, frame_bgr = cap.read()
+        if not ret:
+            break
+        rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+        face_crop, face_prob = detect_face_crop(rgb, mtcnn)
+
+        if face_crop is None:
+            logs.append(f"Frame {frame_no}: No face detected, skipping...")
+            records.append({
+                "frame": frame_no, "label": "SKIP",
+                "conf_fake": None, "conf_real": None,
+                "face_prob": None, "reasons": ["no_face"],
+            })
+            consecutive_counter = 0
+            prev_gray = None
+            frame_no += 1
+            continue
+
+        pred = predict_frame(face_crop, MODEL)
+        if pred is None:
+            logs.append(f"Frame {frame_no}: transform/predict error — skipping")
+            records.append({
+                "frame": frame_no, "label": "SKIP",
+                "conf_fake": None, "conf_real": None,
+                "face_prob": face_prob, "reasons": ["transform_error"],
+            })
+            consecutive_counter = 0
+            prev_gray = None
+            frame_no += 1
+            continue
+
+        conf_fake, conf_real, _ = pred
+        label, reasons, flags = classify_frame(conf_fake, conf_real, face_prob)
+
+        # Temporal-similarity downgrade (AI smoothness signal)
+        curr_gray = compute_face_gray(face_crop)
+        diff = frame_similarity_diff(curr_gray, prev_gray)
+        low_variation = diff is not None and diff < SIMILARITY_DIFF_THRESHOLD
+        if low_variation:
+            reasons.append("low_temporal_variation")
+            if label == "REAL":
+                label = "SUSPICIOUS"
+
+        # Temporal-consistency boost on streaks of FAKE/SUSPICIOUS frames
+        if label in ("FAKE", "SUSPICIOUS"):
+            consecutive_counter += 1
+        else:
+            consecutive_counter = 0
+        temporal_boost = (
+            consecutive_counter > 0
+            and consecutive_counter % TEMPORAL_CONSEC_FRAMES == 0
+        )
+        if temporal_boost:
+            reasons.append("temporal_boost")
+            temporal_boost_count += 1
+
+        # Compose this frame's score contribution and update aggregates
+        frame_score = compute_frame_score(
+            label, conf_fake,
+            low_face_conf=flags["low_face_conf"],
+            low_variation=low_variation,
+            temporal_boost=temporal_boost,
+        )
+        score += frame_score
+        conf_fake_list.append(conf_fake)
+        processed_face_frames += 1
+
+        if label == "FAKE":
+            fake_count += 1
+            weighted_window.append(WEIGHT_FAKE)
+        elif label == "SUSPICIOUS":
+            suspicious_count += 1
+            weighted_window.append(WEIGHT_SUSPICIOUS)
+        else:
+            real_count += 1
+            weighted_window.append(WEIGHT_REAL)
+        if flags["low_conf_gap"]:
+            low_conf_gap_count += 1
+        if flags["low_face_conf"]:
+            low_face_conf_count += 1
+        if low_variation:
+            low_variation_count += 1
+
+        records.append({
+            "frame": frame_no,
+            "label": label,
+            "conf_fake": conf_fake,
+            "conf_real": conf_real,
+            "face_prob": face_prob,
+            "reasons": list(reasons),
+            "frame_score": frame_score,
+        })
+        logs.append(format_frame_log(frame_no, label, conf_fake, conf_real, face_prob, reasons))
+
+        # Persist FAKE / SUSPICIOUS thumbnails for the UI gallery
+        if label in ("FAKE", "SUSPICIOUS"):
+            tag = "fake" if label == "FAKE" else "suspicious"
+            fpath = os.path.join(suspicious_dir, f"pred_{tag}_frame_{frame_no:05d}.jpg")
+            try:
+                cv2.imwrite(fpath, frame_bgr)
+                suspicious_files.append(os.path.relpath(fpath, output_subdir))
+            except Exception as e:
+                logs.append(f"WARNING: failed to write thumbnail for frame {frame_no}: {e}")
+
+        prev_gray = curr_gray
+
+        # Early stop: weighted moving ratio over recent frames
+        if (
+            processed_face_frames >= EARLY_STOP_MIN_FRAMES
+            and len(weighted_window) == weighted_window.maxlen
+        ):
+            recent_weighted = float(sum(weighted_window)) / float(len(weighted_window))
+            if recent_weighted >= EARLY_STOP_WEIGHTED_RATIO:
+                early_stop_triggered = True
+                early_stop_frame_idx = frame_no
+                logs.append(
+                    f"FAKE detected (early-stop) at frame {frame_no}, "
+                    f"weighted_ratio={recent_weighted:.3f}"
+                )
+                break
+
+        frame_no += 1
+
+    cap.release()
+
+    # Global stability check (AI-smoothness signal across whole video)
+    global_reasons = []
+    variance, stability_triggered = stability_check(conf_fake_list)
+    if stability_triggered:
+        score += STABILITY_GLOBAL_SCORE
+        global_reasons.append("model_output_too_stable")
+        logs.append(
+            f"Global: model output too stable (var={variance:.6f}) — applying stability boost"
+        )
+
+    # Final fusion
+    total_frames = max(1, processed_face_frames)
+    final_score = float(score) / float(total_frames)
+    suspicious_ratio = float(suspicious_count) / float(total_frames)
+    fake_ratio = float(fake_count) / float(total_frames)
+
+    final_decision = fuse_final_decision(
+        processed_face_frames, final_score, suspicious_ratio, has_segments=False
+    )
+    confidence_level = (
+        compute_confidence_level(final_score, suspicious_ratio)
+        if processed_face_frames > 0 else "UNKNOWN"
+    )
+
+    csv_filename = "frame_predictions.csv"
+    csv_path = os.path.join(output_subdir, csv_filename)
+    save_csv(records, csv_path)
+
+    # Backward-compatible per-frame arrays (only non-skipped frames)
+    non_skip = [r for r in records if r["label"] != "SKIP"]
+    frame_indices = [r["frame"] for r in non_skip]
+    conf_fake_values = [r["conf_fake"] for r in non_skip]
+    conf_real_values = [r["conf_real"] for r in non_skip]
+    labels = [r["label"] for r in non_skip]
+
+    if processed_face_frames == 0:
+        summary_text = "No face-containing frames were processed."
+    else:
+        summary_text = (
+            f"Final Decision: {final_decision} ({confidence_level}). "
+            f"FAKE={fake_count} | SUSPICIOUS={suspicious_count} | REAL={real_count} "
+            f"of {processed_face_frames} processed frames. "
+            f"final_score={final_score:.3f}, suspicious_ratio={suspicious_ratio:.3f}, "
+            f"fake_ratio={fake_ratio:.3f}, conf_fake_var={variance:.6f}."
+        )
+
+    return {
+        # --- backward-compatible keys ---
+        "logs": logs,
+        "frame_indices": frame_indices,
+        "conf_fake_values": conf_fake_values,
+        "conf_real_values": conf_real_values,
+        "labels": labels,
+        "final_decision": final_decision,
+        "fake_count": int(fake_count),
+        "real_count": int(real_count),
+        "processed_face_frames": processed_face_frames,
+        "fake_ratio": fake_ratio,
+        "early_stop_triggered": early_stop_triggered,
+        "early_stop_frame_idx": early_stop_frame_idx,
+        "csv_filename": csv_filename,
+        "suspicious_files": suspicious_files,
+        # --- new explainability fields ---
+        "suspicious_count": int(suspicious_count),
+        "low_conf_gap_count": int(low_conf_gap_count),
+        "low_face_conf_count": int(low_face_conf_count),
+        "temporal_boost_count": int(temporal_boost_count),
+        "low_variation_count": int(low_variation_count),
+        "suspicious_ratio": float(suspicious_ratio),
+        "final_score": float(final_score),
+        "confidence_level": confidence_level,
+        "variance_conf_fake": float(variance),
+        "global_reasons": global_reasons,
+        "summary_text": summary_text,
+    }
+
+# ---------------- FULL video processing (multi-factor + weighted sliding window) ----------------
+def analyze_video_full(video_path, output_subdir):
+    """
+    Full deepfake analysis with explainable, fusion-based decisioning.
+
+    Pipeline:
+      Per frame: detect face -> predict -> classify_frame() -> similarity & temporal
+      checks -> compose frame_score -> push weighted (FAKE=1, SUSPICIOUS=0.5,
+      REAL=0) value into preds array.
+
+      Globally: stability_check() can add a global score boost when conf_fake
+      is unnaturally smooth (AI signature).
+
+      Detection: weighted_sliding_window_segments() over absolute frame indices,
+      threshold chosen by fps (LOW_FPS_THRESHOLD or HIGH_FPS_THRESHOLD).
+
+      Final decision: fuse_final_decision() combines segment presence,
+      final_score, and suspicious_ratio. confidence_level summarizes severity.
+    """
+    global MODEL
+    if MODEL is None:
+        MODEL = load_model()
+    mtcnn = get_mtcnn()
+
+    cap = cv2.VideoCapture(video_path)
+    fps_raw = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    fps = max(1, int(round(fps_raw)))
+
+    logs = []
+    records = []
+    weighted_preds = []  # absolute-frame-indexed weighted scores
+
+    # Counters
+    fake_count = 0
+    suspicious_count = 0
+    real_count = 0
+    low_conf_gap_count = 0
+    low_face_conf_count = 0
+    temporal_boost_count = 0
+    low_variation_count = 0
+
+    # Running aggregates
+    score = 0.0
+    consecutive_counter = 0
+    prev_gray = None
+    conf_fake_list = []
+
+    frame_no = 0
+    while True:
+        ret, frame_bgr = cap.read()
+        if not ret:
+            break
+        rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+        face_crop, face_prob = detect_face_crop(rgb, mtcnn)
+
+        if face_crop is None:
+            logs.append(f"Frame {frame_no}: No face detected, skipping...")
+            records.append({
+                "frame": frame_no, "label": "SKIP",
+                "conf_fake": None, "conf_real": None,
+                "face_prob": None, "reasons": ["no_face"],
+            })
+            weighted_preds.append(WEIGHT_REAL)
+            consecutive_counter = 0
+            prev_gray = None
+            frame_no += 1
+            continue
+
+        pred = predict_frame(face_crop, MODEL)
+        if pred is None:
+            logs.append(f"Frame {frame_no}: transform/predict error — skipping")
+            records.append({
+                "frame": frame_no, "label": "SKIP",
+                "conf_fake": None, "conf_real": None,
+                "face_prob": face_prob, "reasons": ["transform_error"],
+            })
+            weighted_preds.append(WEIGHT_REAL)
+            consecutive_counter = 0
+            prev_gray = None
+            frame_no += 1
+            continue
+
+        conf_fake, conf_real, _ = pred
+        label, reasons, flags = classify_frame(conf_fake, conf_real, face_prob)
+
+        # Temporal-similarity downgrade (AI smoothness signal)
+        curr_gray = compute_face_gray(face_crop)
+        diff = frame_similarity_diff(curr_gray, prev_gray)
+        low_variation = diff is not None and diff < SIMILARITY_DIFF_THRESHOLD
+        if low_variation:
+            reasons.append("low_temporal_variation")
+            if label == "REAL":
+                label = "SUSPICIOUS"
+
+        # Temporal-consistency boost
+        if label in ("FAKE", "SUSPICIOUS"):
+            consecutive_counter += 1
+        else:
+            consecutive_counter = 0
+        temporal_boost = (
+            consecutive_counter > 0
+            and consecutive_counter % TEMPORAL_CONSEC_FRAMES == 0
+        )
+        if temporal_boost:
+            reasons.append("temporal_boost")
+            temporal_boost_count += 1
+
+        frame_score = compute_frame_score(
+            label, conf_fake,
+            low_face_conf=flags["low_face_conf"],
+            low_variation=low_variation,
+            temporal_boost=temporal_boost,
+        )
+        score += frame_score
+        conf_fake_list.append(conf_fake)
+
+        if label == "FAKE":
+            fake_count += 1
+            weighted_preds.append(WEIGHT_FAKE)
+        elif label == "SUSPICIOUS":
+            suspicious_count += 1
+            weighted_preds.append(WEIGHT_SUSPICIOUS)
+        else:
+            real_count += 1
+            weighted_preds.append(WEIGHT_REAL)
+        if flags["low_conf_gap"]:
+            low_conf_gap_count += 1
+        if flags["low_face_conf"]:
+            low_face_conf_count += 1
+        if low_variation:
+            low_variation_count += 1
+
+        records.append({
+            "frame": frame_no,
+            "label": label,
+            "conf_fake": conf_fake,
+            "conf_real": conf_real,
+            "face_prob": face_prob,
+            "reasons": list(reasons),
+            "frame_score": frame_score,
+        })
+        logs.append(format_frame_log(frame_no, label, conf_fake, conf_real, face_prob, reasons))
+
+        prev_gray = curr_gray
+        frame_no += 1
+
+    cap.release()
+
+    non_skip_records = [r for r in records if r["label"] != "SKIP"]
+    total_processed_frames = len(non_skip_records)
+
+    # Global stability check
+    global_reasons = []
+    variance, stability_triggered = stability_check(conf_fake_list)
+    if stability_triggered:
+        score += STABILITY_GLOBAL_SCORE
+        global_reasons.append("model_output_too_stable")
+        logs.append(
+            f"Global: model output too stable (var={variance:.6f}) — applying stability boost"
+        )
+
+    # Aggregate ratios
+    if total_processed_frames > 0:
+        final_score = float(score) / float(total_processed_frames)
+        suspicious_ratio = float(suspicious_count) / float(total_processed_frames)
+        fake_ratio = float(fake_count) / float(total_processed_frames)
+    else:
+        final_score = 0.0
+        suspicious_ratio = 0.0
+        fake_ratio = 0.0
+
+    # Save per-frame CSV
+    csv_filename = "frame_predictions.csv"
+    csv_path = os.path.join(output_subdir, csv_filename)
+    save_csv(records, csv_path)
+
+    # Weighted sliding-window detection
+    fake_ratio_threshold = LOW_FPS_THRESHOLD if fps <= FPS_SPLIT else HIGH_FPS_THRESHOLD
+    merged_intervals = weighted_sliding_window_segments(
+        weighted_preds, fps=fps, fake_ratio=fake_ratio_threshold
+    )
+
+    # Extract clips for merged_intervals using ffmpeg (H.264 for browser)
+    segment_info = []
+    segment_file_names = []
+    for idx,(s,e) in enumerate(merged_intervals):
+        clip_name = f"manip_segment_{idx:02d}_f{s:05d}_f{e:05d}.mp4"
+        clip_path = os.path.join(output_subdir, clip_name)
+        success = extract_clip_ffmpeg(video_path, s, e, fps, clip_path)
+        if success:
+            segment_info.append({"start_frame": s, "end_frame": e, "filename": clip_name})
+            segment_file_names.append(clip_name)
+            logs.append(f"Created segment {idx}: frames {s}-{e}")
+        else:
+            logs.append(f"Failed to create segment {idx}: frames {s}-{e}")
+
+    # Create merged manipulated-only video (concatenate segments from original) using ffmpeg concat
+    merged_name = None
+    if merged_intervals:
+        merged_name = "manipulated_only_merged.mp4"
+        merged_path = os.path.join(output_subdir, merged_name)
+        # build list file with absolute paths
+        list_file = os.path.join(output_subdir, "merge_list.txt")
+        with open(list_file, "w") as f:
+            for name in segment_file_names:
+                # write path relative to list file: use absolute to be safe
+                f.write(f"file '{os.path.join(output_subdir, name)}'\n")
+        try:
+            # re-encode/remux to ensure browser-playable mp4
+            remux_cmd = [
+                "ffmpeg", "-y", "-loglevel", "error",
+                "-f", "concat", "-safe", "0",
+                "-i", list_file,
+                "-c:v", "libx264",
+                "-preset", "fast",
+                "-pix_fmt", "yuv420p",
+                "-movflags", "+faststart",
+                "-an",
+                merged_path
+            ]
+            remux_res = subprocess.run(remux_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
+            if remux_res.returncode != 0:
+                print("ffmpeg concat/remux failed:")
+                print(remux_res.stderr)
+            else:
+                logs.append(f"Merged video created: {merged_name}")
+        except FileNotFoundError:
+            print("WARNING: FFmpeg not found. Skipping merged video creation.")
+            merged_name = None
+        except Exception as e:
+            print("ffmpeg concat error:", e)
+            merged_name = None
+
+    # Thumbnails — include FAKE and SUSPICIOUS frames, ordered by conf_fake desc
+    thumbs_dir = os.path.join(output_subdir, "thumbnails")
+    os.makedirs(thumbs_dir, exist_ok=True)
+    thumbnail_urls = []
+
+    flagged_records = [
+        r for r in records
+        if r.get("label") in ("FAKE", "SUSPICIOUS") and r.get("conf_fake") is not None
+    ]
+    flagged_records.sort(key=lambda x: float(x.get("conf_fake", 0.0)), reverse=True)
+
+    cap_thumbs = cv2.VideoCapture(video_path)
+    if not cap_thumbs.isOpened():
+        logs.append("ERROR: Could not reopen video for thumbnail generation")
+    else:
+        for r in flagged_records:
+            fidx = int(r["frame"])
+            cap_thumbs.set(cv2.CAP_PROP_POS_FRAMES, fidx)
+            ret, frame = cap_thumbs.read()
+            if not ret:
+                logs.append(f"WARNING: Could not extract thumbnail for frame {fidx}")
+                continue
+            tag = "fake" if r["label"] == "FAKE" else "susp"
+            thumb_name = f"thumb_{tag}_{fidx:05d}.jpg"
+            thumb_path = os.path.join(thumbs_dir, thumb_name)
+            try:
+                cv2.imwrite(thumb_path, frame)
+                thumbnail_urls.append(
+                    f"/outputs/{os.path.basename(output_subdir)}/thumbnails/{thumb_name}"
+                )
+            except Exception as e:
+                logs.append(f"ERROR writing thumbnail {fidx}: {e}")
+        cap_thumbs.release()
+
+    # Save segments CSV
+    seg_csv_name = "manipulated_segments.csv"
+    seg_csv_path = os.path.join(output_subdir, seg_csv_name)
+    with open(seg_csv_path, "w", newline="") as fh:
+        writer = csv.writer(fh)
+        writer.writerow(["segment_idx", "start_frame", "end_frame", "clip_filename"])
+        for i, (s, e) in enumerate(merged_intervals):
+            clip_fn = f"manip_segment_{i:02d}_f{s:05d}_f{e:05d}.mp4"
+            writer.writerow([i, s, e, clip_fn])
+
+    # Multi-factor fusion (segments OR score-based OR suspicious-ratio based)
+    final_decision = fuse_final_decision(
+        total_processed_frames,
+        final_score=final_score,
+        suspicious_ratio=suspicious_ratio,
+        has_segments=len(merged_intervals) > 0,
+    )
+    confidence_level = (
+        compute_confidence_level(final_score, suspicious_ratio)
+        if total_processed_frames > 0 else "UNKNOWN"
+    )
+
+    if total_processed_frames == 0:
+        summary_text = "No face-containing frames were processed."
+    else:
+        summary_text = (
+            f"Final Decision: VIDEO IS {final_decision} ({confidence_level}). "
+            f"FAKE={fake_count} | SUSPICIOUS={suspicious_count} | REAL={real_count} "
+            f"of {total_processed_frames} processed frames "
+            f"(fake_ratio={fake_ratio*100:.2f}%, suspicious_ratio={suspicious_ratio*100:.2f}%). "
+            f"final_score={final_score:.3f}, conf_fake_var={variance:.6f}. "
+            f"Manipulated segments={len(merged_intervals)}."
+        )
+
+    # Backward-compatible per-frame arrays (FAKE-only) + new SUSPICIOUS arrays
+    fake_seq = [r for r in non_skip_records if r["label"] == "FAKE"]
+    susp_seq = [r for r in non_skip_records if r["label"] == "SUSPICIOUS"]
+
+    return {
+        # --- backward-compatible keys ---
+        "logs": logs,
+        "frame_indices": [r["frame"] for r in fake_seq],
+        "conf_fake_values": [r["conf_fake"] if r["conf_fake"] is not None else 0.0 for r in fake_seq],
+        "conf_real_values": [r["conf_real"] if r["conf_real"] is not None else 0.0 for r in fake_seq],
+        "labels": [r["label"] for r in fake_seq],
+        "final_decision": final_decision,
+        "fake_count": int(fake_count),
+        "real_count": int(real_count),
+        "processed_face_frames": total_processed_frames,
+        "fake_ratio": float(fake_ratio),
+        "csv_filename": csv_filename,
+        "segment_info": segment_info,
+        "segment_file_names": segment_file_names,
+        "manipulated_merged_name": merged_name,
+        "thumbnail_urls": thumbnail_urls,
+        "seg_csv_name": seg_csv_name,
+        "summary_text": summary_text,
+        # --- new explainability / decision-fusion fields ---
+        "suspicious_count": int(suspicious_count),
+        "suspicious_ratio": float(suspicious_ratio),
+        "low_conf_gap_count": int(low_conf_gap_count),
+        "low_face_conf_count": int(low_face_conf_count),
+        "temporal_boost_count": int(temporal_boost_count),
+        "low_variation_count": int(low_variation_count),
+        "final_score": float(final_score),
+        "confidence_level": confidence_level,
+        "variance_conf_fake": float(variance),
+        "global_reasons": global_reasons,
+        "suspicious_frame_indices": [r["frame"] for r in susp_seq],
+        "suspicious_conf_fake_values": [
+            r["conf_fake"] if r["conf_fake"] is not None else 0.0 for r in susp_seq
+        ],
+    }
+
+# ---------------- Flask app & routes ----------------
+# app = Flask(__name__, static_folder=".")
+app = Flask(__name__, static_folder="static", static_url_path="/static")
+
+@app.route("/")
+def index():
+    return send_from_directory(BASE_DIR, "index.html")
+
+@app.route("/analyze_frame", methods=["POST"])
+def analyze_frame_route():
+    """Analyze a single frame image and return real-time prediction"""
+    if MODEL is None:
+        return jsonify({"error": "Model not loaded"}), 500
+    
+    if "frame" not in request.files:
+        return jsonify({"error": "No frame file provided"}), 400
+    
+    file = request.files["frame"]
+    if file.filename == "":
+        return jsonify({"error": "No selected file"}), 400
+    
+    try:
+        # Read image from file
+        file_bytes = np.frombuffer(file.read(), np.uint8)
+        img_bgr = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+        
+        if img_bgr is None:
+            return jsonify({"error": "Invalid image file"}), 400
+        
+        # Convert BGR to RGB
+        img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+        
+        # Face detection with MTCNN
+        mtcnn = get_mtcnn()
+        faces, face_probs = mtcnn.detect(img_rgb, landmarks=False)
+        
+        if faces is None or len(faces) == 0:
+            return jsonify({
+                "label": "NO FACE",
+                "conf_fake": 0.0,
+                "conf_real": 0.0,
+                "face_detected": False
+            })
+        
+        # Use first face (largest/most confident)
+        face_box = faces[0]
+        face_prob = float(face_probs[0]) if face_probs is not None and len(face_probs) > 0 else 0.99
+        
+        # Extract face region
+        x1, y1, x2, y2 = [int(c) for c in face_box]
+        x1 = max(0, x1 - 10)
+        y1 = max(0, y1 - 10)
+        x2 = min(img_rgb.shape[1], x2 + 10)
+        y2 = min(img_rgb.shape[0], y2 + 10)
+        
+        face_crop = img_rgb[y1:y2, x1:x2]
+        
+        if face_crop.size == 0:
+            return jsonify({
+                "label": "NO FACE",
+                "conf_fake": 0.0,
+                "conf_real": 0.0,
+                "face_detected": False
+            })
+        
+        # Apply transforms
+        transformed = transform(image=face_crop)
+        input_tensor = transformed["image"].unsqueeze(0).to(DEVICE)
+        
+        # Model prediction
+        with torch.no_grad():
+            logits = MODEL(input_tensor)
+            probs = torch.softmax(logits, dim=1)
+            conf_fake = float(probs[0, FAKE_CLASS_IDX].cpu())
+            conf_real = float(probs[0, REAL_CLASS_IDX].cpu())
+        
+        # Determine label (higher confidence wins)
+        label = "FAKE" if conf_fake > conf_real else "REAL"
+        
+        return jsonify({
+            "label": label,
+            "conf_fake": round(conf_fake, 4),
+            "conf_real": round(conf_real, 4),
+            "face_detected": True,
+            "face_prob": round(face_prob, 4)
+        })
+    
+    except Exception as e:
+        return jsonify({"error": f"Frame analysis failed: {str(e)}"}), 500
+
+@app.route("/analyze", methods=["POST"])
+def analyze_route():
+    if "video" not in request.files:
+        return jsonify({"error":"No video file part"}), 400
+    file = request.files["video"]
+    if file.filename == "":
+        return jsonify({"error":"No selected file"}), 400
+    if not allowed_file(file.filename):
+        return jsonify({"error":"File extension not allowed"}), 400
+
+    filename = secure_filename(file.filename)
+    upload_id = uuid.uuid4().hex
+    upload_subdir = os.path.join(UPLOAD_DIR, upload_id)
+    os.makedirs(upload_subdir, exist_ok=True)
+    upload_path = os.path.join(upload_subdir, filename)
+    file.save(upload_path)
+
+    run_id = uuid.uuid4().hex
+    run_output_dir = os.path.join(OUTPUT_DIR, run_id)
+    os.makedirs(run_output_dir, exist_ok=True)
+
+    try:
+        result = analyze_video(upload_path, run_output_dir)
+    except Exception as e:
+        shutil.rmtree(upload_subdir, ignore_errors=True)
+        shutil.rmtree(run_output_dir, ignore_errors=True)
+        return jsonify({"error": f"Error during analysis: {str(e)}"}), 500
+
+    result["csv_url"] = f"/outputs/{run_id}/{result['csv_filename']}"
+    result["suspicious_urls"] = [f"/outputs/{run_id}/{p}" for p in result.get("suspicious_files", [])]
+    result["summary_text"] = result.get("summary_text", "")
+    return jsonify(result)
+
+@app.route("/analyze_full", methods=["POST"])
+def analyze_full_route():
+    if "video" not in request.files:
+        return jsonify({"error":"No video file part"}), 400
+    file = request.files["video"]
+    if file.filename == "":
+        return jsonify({"error":"No selected file"}), 400
+    if not allowed_file(file.filename):
+        return jsonify({"error":"File extension not allowed"}), 400
+
+    filename = secure_filename(file.filename)
+    upload_id = uuid.uuid4().hex
+    upload_subdir = os.path.join(UPLOAD_DIR, upload_id)
+    os.makedirs(upload_subdir, exist_ok=True)
+    upload_path = os.path.join(upload_subdir, filename)
+    file.save(upload_path)
+
+    run_id = uuid.uuid4().hex
+    run_output_dir = os.path.join(OUTPUT_DIR, run_id)
+    os.makedirs(run_output_dir, exist_ok=True)
+
+    try:
+        result = analyze_video_full(upload_path, run_output_dir)
+    except Exception as e:
+        shutil.rmtree(upload_subdir, ignore_errors=True)
+        shutil.rmtree(run_output_dir, ignore_errors=True)
+        return jsonify({"error": f"Error during full analysis: {str(e)}"}), 500
+
+    # front-end friendly URLs
+    result["csv_url"] = f"/outputs/{run_id}/{result['csv_filename']}"
+    result["segment_urls"] = [f"/outputs/{run_id}/{name}" for name in result.get("segment_file_names", [])]
+    result["manipulated_merged_url"] = f"/outputs/{run_id}/{result['manipulated_merged_name']}" if result.get("manipulated_merged_name") else None
+    result["thumbnail_urls"] = result.get("thumbnail_urls", [])
+    result["segments_csv_url"] = f"/outputs/{run_id}/{result['seg_csv_name']}" if result.get("seg_csv_name") else None
+    result["summary_text"] = result.get("summary_text", "")
+    return jsonify(result)
+
+@app.route("/outputs/<run_id>/<path:filename>")
+def serve_output(run_id, filename):
+    run_dir = os.path.join(OUTPUT_DIR, run_id)
+    fullpath = os.path.join(run_dir, filename)
+    if not os.path.exists(fullpath):
+        abort(404)
+    return send_from_directory(run_dir, filename, as_attachment=False)
+
+@app.route("/login.html")
+def login():
+    return send_from_directory(BASE_DIR, "login.html")
+
+@app.route("/signup.html")
+def signup():
+    return send_from_directory(BASE_DIR, "signup.html")
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=True)

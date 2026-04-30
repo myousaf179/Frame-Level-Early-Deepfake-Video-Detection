@@ -1,0 +1,1653 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Deepfake Defender</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root{
+      --bg:#0a0e27; --bg-dark:#050812; --card:#0f1423; --accent:#10b981; --accent2:#f97316; --danger:#ef4444; --success:#10b981; --muted:#94a3b8; --glass: rgba(255,255,255,0.04); --header-bg: linear-gradient(90deg, rgba(10,14,39,0.95), rgba(5,8,18,0.95));
+      --maxw:1200px;
+      --neon-green:#10b981;
+      --neon-cyan:#06b6d4;
+      --neon-purple:#8b5cf6;
+      --shadow-sm: 0 4px 12px rgba(0,0,0,0.15);
+      --shadow-md: 0 12px 40px rgba(0,0,0,0.3);
+      --shadow-lg: 0 20px 60px rgba(0,0,0,0.4);
+      --shadow-glass: 0 8px 32px rgba(0,0,0,0.25), inset 0 1px 2px rgba(255,255,255,0.08);
+      --shadow-glass-hover: 0 12px 48px rgba(0,0,0,0.35), inset 0 1px 2px rgba(255,255,255,0.12);
+      --neon-glow: 0 0 20px rgba(16,185,129,0.4), 0 0 40px rgba(16,185,129,0.2);
+      --transition: all 300ms cubic-bezier(0.4,0,0.2,1);
+    }
+    html{scroll-behavior:smooth}
+    *{box-sizing:border-box;font-family:'Segoe UI',system-ui,Inter,Roboto,Arial,sans-serif;transition:inherit}
+    body{margin:0;background: linear-gradient(180deg,#0a0e27 0%, #050812 100%); color:#f1f5f9;min-height:100vh;position:relative;overflow-x:hidden;transition:background 0.3s ease}
+    body::before{content:'';position:fixed;top:0;left:0;right:0;bottom:0;background:radial-gradient(circle at 20% 50%, rgba(16,185,129,0.03) 0%, transparent 50%), radial-gradient(circle at 80% 80%, rgba(6,182,212,0.02) 0%, transparent 50%);pointer-events:none;z-index:-1}
+    
+    /* HEADER */
+    header.site-header{position:sticky;top:0;z-index:40;background:linear-gradient(90deg, rgba(10,14,39,0.7), rgba(5,8,18,0.7));border-bottom:1px solid rgba(255,255,255,0.1);backdrop-filter: blur(30px);-webkit-backdrop-filter: blur(30px);box-shadow:0 12px 48px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.08);transition:var(--transition)}
+    .header-inner{max-width:var(--maxw);margin:0 auto;padding:16px 24px;display:flex;align-items:center;justify-content:space-between;flex-wrap:nowrap;gap:16px;overflow-x:auto}
+    .brand{display:flex;align-items:center;gap:14px}
+    .logo{width:48px;height:48px;border-radius:12px;background:rgba(16,185,129,0.12);display:flex;align-items:center;justify-content:center;padding:4px;box-shadow:0 8px 32px rgba(16,185,129,0.3), inset 0 1px 0 rgba(255,255,255,0.15), 0 0 20px rgba(16,185,129,0.25);border:1.5px solid rgba(16,185,129,0.4);transition:var(--transition);backdrop-filter:blur(8px);animation:slideInLeft 600ms cubic-bezier(0.34,1.56,0.64,1)}
+    .logo:hover{transform:scale(1.08) rotate(5deg);box-shadow:0 12px 40px rgba(16,185,129,0.45), inset 0 1px 0 rgba(255,255,255,0.2), 0 0 30px rgba(16,185,129,0.35)}
+    .logo img{width:100%;height:100%;object-fit:contain;border-radius:10px}
+    .brand-text h1{margin:0;font-size:18px;font-weight:800;letter-spacing:-0.5px;background:linear-gradient(135deg, #fff 0%, #a1f3e1 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;text-shadow:0 0 10px rgba(16,185,129,0.3), 0 0 20px rgba(6,182,212,0.2);filter:drop-shadow(0 0 8px rgba(16,185,129,0.2))}
+    .brand-text p{margin:2px 0 0 0;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px}
+    
+    nav.top-nav{display:flex;gap:6px;align-items:center;flex-wrap:nowrap;flex-shrink:0;animation:fadeInUp 600ms cubic-bezier(0.34,1.56,0.64,1) 100ms backwards}
+    .nav-btn{background:transparent;border:0;color:rgba(255,255,255,0.75);padding:10px 14px;border-radius:10px;font-weight:600;cursor:pointer;font-size:14px;transition:var(--transition);position:relative;overflow:hidden;white-space:nowrap;flex-shrink:0;animation:fadeInUp 600ms cubic-bezier(0.34,1.56,0.64,1) backwards}
+    .nav-btn:nth-child(1){animation-delay:150ms}
+    .nav-btn:nth-child(2){animation-delay:200ms}
+    .nav-btn:nth-child(3){animation-delay:250ms}
+    .nav-btn:nth-child(4){animation-delay:300ms}
+    .nav-btn::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg, rgba(16,185,129,0.12), rgba(6,182,212,0.06));opacity:0;transition:var(--transition);border-radius:12px;z-index:-1}
+    .nav-btn:hover{color:var(--accent);transform:translateY(-2px) scale(1.05);background:rgba(16,185,129,0.1);box-shadow:0 0 20px rgba(16,185,129,0.25), inset 0 1px 2px rgba(255,255,255,0.05)}
+    .nav-btn:hover::before{opacity:1}
+    .nav-btn:active{animation:buttonClickPress 300ms ease-out}
+    .nav-btn.active{background:linear-gradient(135deg,var(--accent),#06b6d4);color:#fff;box-shadow:0 12px 32px rgba(16,185,129,0.35), 0 0 25px rgba(16,185,129,0.3), 0 0 15px rgba(16,185,129,0.2);transform:translateY(-2px)}
+    .nav-auth{display:flex;gap:8px;align-items:center;flex-wrap:nowrap;flex-shrink:0}
+    .nav-auth-divider{width:1px;height:24px;background:rgba(255,255,255,0.1)}
+    
+    /* MAIN */
+    .wrap{max-width:var(--maxw);margin:40px auto;padding:16px;transition:var(--transition)}
+    .hero{background: linear-gradient(135deg, rgba(16,185,129,0.1), rgba(6,182,212,0.06)); padding:40px;border-radius:16px;border:1px solid rgba(16,185,129,0.2);display:flex;gap:48px;align-items:center;box-shadow:var(--shadow-glass);transition:var(--transition);position:relative;overflow:hidden;backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
+    .hero::before{content:'';position:absolute;inset:0;background:radial-gradient(circle at 100% -50%, rgba(16,185,129,0.1) 0%, transparent 60%);pointer-events:none;border-radius:20px}
+    .hero-left{position:relative;z-index:2}
+    .hero-left h2{margin:0 0 12px 0;font-size:36px;font-weight:900;line-height:1.2;letter-spacing:-1px;background:linear-gradient(135deg, #fff 0%, #86efac 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;text-shadow:0 0 20px rgba(16,185,129,0.4), 0 0 40px rgba(16,185,129,0.2), 0 0 60px rgba(6,182,212,0.15);filter:drop-shadow(0 0 12px rgba(16,185,129,0.25))}
+    .hero-left p{margin:0 0 16px 0;color:rgba(255,255,255,0.75);line-height:1.7;font-size:16px;font-weight:500}
+    .hero-right{padding:28px;border-radius:14px;background:rgba(255,255,255,0.08);border:1.5px solid rgba(16,185,129,0.25);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);box-shadow:0 8px 32px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.15);transition:all 0.3s ease}
+    .hero-right:hover{background:rgba(255,255,255,0.11);border-color:rgba(16,185,129,0.4);box-shadow:0 12px 48px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.2), 0 0 30px rgba(16,185,129,0.15);transform:translateY(-4px)}
+    .hero-right h3{margin:0 0 16px 0;font-size:16px;font-weight:700;color:#86efac;text-transform:uppercase;letter-spacing:0.5px}
+    .hero-right p{margin:0 0 12px 0;color:rgba(255,255,255,0.7);font-size:13px;line-height:1.6;font-weight:500}
+    
+    /* BUTTONS */
+    .btn{background:linear-gradient(135deg,var(--accent),#06b6d4); color:#fff;border:none;padding:12px 24px;border-radius:10px;font-weight:700;cursor:pointer;transition:var(--transition);font-size:14px;display:inline-flex;align-items:center;gap:8px;box-shadow:0 12px 32px rgba(16,185,129,0.3), inset 0 1px 0 rgba(255,255,255,0.2), 0 0 15px rgba(16,185,129,0.25);position:relative;overflow:hidden;text-transform:uppercase;letter-spacing:0.5px}
+    .btn::before{content:'';position:absolute;inset:0;background:linear-gradient(45deg, transparent 30%, rgba(255,255,255,0.1) 50%, transparent 70%);opacity:0;transition:all 200ms ease;transform:translateX(-100%)}.btn:hover::before{opacity:1;transform:translateX(100%)}
+    .btn:hover{transform:translateY(-3px);box-shadow:0 16px 40px rgba(16,185,129,0.45), inset 0 1px 0 rgba(255,255,255,0.3), 0 0 25px rgba(16,185,129,0.4), 0 0 50px rgba(16,185,129,0.2);animation:neonPulseButton 2s ease-in-out infinite}
+    @keyframes neonPulseButton{0%,100%{box-shadow:0 16px 40px rgba(16,185,129,0.45), inset 0 1px 0 rgba(255,255,255,0.3), 0 0 25px rgba(16,185,129,0.4), 0 0 50px rgba(16,185,129,0.2)}50%{box-shadow:0 16px 40px rgba(16,185,129,0.5), inset 0 1px 0 rgba(255,255,255,0.3), 0 0 35px rgba(16,185,129,0.5), 0 0 70px rgba(16,185,129,0.3)}}
+    .btn:active{transform:translateY(-1px);box-shadow:0 8px 24px rgba(16,185,129,0.35)}
+    .btn.secondary{background:transparent;border:1.5px solid var(--accent);color:var(--accent);box-shadow:0 8px 20px rgba(16,185,129,0.15), 0 0 10px rgba(16,185,129,0.2);text-transform:uppercase;letter-spacing:0.5px;border-radius:10px}
+    .btn.secondary:hover{background:rgba(16,185,129,0.08);box-shadow:0 12px 32px rgba(16,185,129,0.3), 0 0 20px rgba(16,185,129,0.3), 0 0 40px rgba(16,185,129,0.15);transform:translateY(-3px);animation:neonPulseSecondary 2s ease-in-out infinite}
+    @keyframes neonPulseSecondary{0%,100%{box-shadow:0 12px 32px rgba(16,185,129,0.3), 0 0 20px rgba(16,185,129,0.3), 0 0 40px rgba(16,185,129,0.15)}50%{box-shadow:0 12px 32px rgba(16,185,129,0.4), 0 0 30px rgba(16,185,129,0.4), 0 0 50px rgba(16,185,129,0.25)}}
+    .btn.secondary::before{display:none}
+    .btn.danger{background:linear-gradient(135deg,#ef4444,#dc2626);box-shadow:0 12px 32px rgba(239,68,68,0.3), inset 0 1px 0 rgba(255,255,255,0.15), 0 0 15px rgba(239,68,68,0.25);text-transform:uppercase;letter-spacing:0.5px;border-radius:10px}
+    .btn.danger:hover{box-shadow:0 16px 40px rgba(239,68,68,0.45), inset 0 1px 0 rgba(255,255,255,0.2), 0 0 25px rgba(239,68,68,0.4), 0 0 50px rgba(239,68,68,0.2);transform:translateY(-3px);animation:neonPulseDanger 2s ease-in-out infinite}
+    @keyframes neonPulseDanger{0%,100%{box-shadow:0 16px 40px rgba(239,68,68,0.45), inset 0 1px 0 rgba(255,255,255,0.2), 0 0 25px rgba(239,68,68,0.4), 0 0 50px rgba(239,68,68,0.2)}50%{box-shadow:0 16px 40px rgba(239,68,68,0.55), inset 0 1px 0 rgba(255,255,255,0.2), 0 0 35px rgba(239,68,68,0.5), 0 0 70px rgba(239,68,68,0.3)}}
+    .btn.small{padding:8px 16px;font-size:12px}
+    
+    /* CARDS */
+    .grid{display:grid;grid-template-columns:1fr 400px;gap:32px;margin-top:24px}
+    .card{background:linear-gradient(135deg, rgba(15,20,35,0.45), rgba(15,20,35,0.35));border-radius:16px;padding:28px;box-shadow:var(--shadow-glass), 0 0 2px rgba(16,185,129,0.3);border:1.5px solid rgba(16,185,129,0.18);transition:var(--transition);position:relative;overflow:hidden;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);animation:cardSlideUp 600ms cubic-bezier(0.34,1.56,0.64,1) backwards;margin-bottom:12px}
+    .card:nth-child(1){animation-delay:100ms}
+    .card:nth-child(2){animation-delay:200ms}
+    .card:nth-child(3){animation-delay:300ms}
+    .card::before{content:'';position:absolute;inset:0;background:radial-gradient(circle at 100% 0%, rgba(16,185,129,0.15) 0%, transparent 80%);opacity:0;transition:var(--transition);pointer-events:none;border-radius:20px}
+    .card:hover{border-color:rgba(16,185,129,0.5);box-shadow:var(--shadow-glass-hover), 0 0 50px rgba(16,185,129,0.3), 0 0 30px rgba(6,182,212,0.15), inset 0 1px 0 rgba(255,255,255,0.08);transform:translateY(-12px);animation:none}
+    .card:hover::before{opacity:1}
+    .card h2{margin:0 0 12px 0;font-size:20px;font-weight:800;letter-spacing:-0.5px;color:#fff;text-shadow:0 0 10px rgba(16,185,129,0.2), 0 0 20px rgba(16,185,129,0.1);filter:drop-shadow(0 0 8px rgba(16,185,129,0.15));padding-bottom:12px;border-bottom:1px solid rgba(16,185,129,0.1)}
+    .card p{margin:0 0 12px 0;color:rgba(255,255,255,0.7);line-height:1.7;font-weight:500}
+    .card p:last-child{margin-bottom:0}
+    
+    /* WEBCAM LIVE DETECTION STYLES */
+    #webcamVideo{box-shadow:0 12px 40px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.08), 0 0 20px rgba(16,185,129,0.15);border:1.5px solid rgba(16,185,129,0.18);transition:var(--transition)}
+    #webcamVideo.active{box-shadow:0 12px 40px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.08), 0 0 40px rgba(16,185,129,0.3), 0 0 20px rgba(16,185,129,0.2)}
+    
+    @keyframes blink{0%,100%{opacity:1}50%{opacity:0.3}}
+    @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,0.4)}50%{box-shadow:0 0 0 8px rgba(239,68,68,0.1)}}
+    
+    #webcamIndicator.active{opacity:1}
+    #webcamConfidenceBar{box-shadow:0 0 10px rgba(16,185,129,0.5), inset 0 1px 0 rgba(255,255,255,0.1)}
+    
+    .upload-area{display:flex;flex-direction:column;gap:18px}
+    
+    /* PROGRESS */
+    .progress{height:14px;background:rgba(255,255,255,0.05);border-radius:8px;overflow:hidden;border:1px solid rgba(16,185,129,0.15);box-shadow:inset 0 2px 4px rgba(0,0,0,0.3), 0 0 10px rgba(16,185,129,0.15);transition:var(--transition);margin-bottom:8px}
+    .progress > i{display:block;height:100%;width:0;background:linear-gradient(90deg, var(--accent), #06b6d4, var(--accent));background-size:200% 100%;box-shadow:0 0 30px rgba(16,185,129,0.5), 0 0 15px rgba(6,182,212,0.3), inset 0 1px 0 rgba(255,255,255,0.3);transition:width 500ms ease-out;border-radius:999px;animation:neonGlowProgress 2s ease-in-out infinite}
+    @keyframes neonGlowProgress{0%,100%{box-shadow:0 0 30px rgba(16,185,129,0.5), 0 0 15px rgba(6,182,212,0.3), inset 0 1px 0 rgba(255,255,255,0.3)}50%{box-shadow:0 0 40px rgba(16,185,129,0.6), 0 0 25px rgba(6,182,212,0.4), inset 0 1px 0 rgba(255,255,255,0.4)}}
+    .processing-stages{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-top:12px;padding:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(16,185,129,0.12);border-radius:12px}
+    .stage-step{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:10px;border:1px solid rgba(148,163,184,0.12);background:rgba(15,23,42,0.55);color:var(--muted);font-size:12px;font-weight:700}
+    .stage-step::before{content:'';width:8px;height:8px;border-radius:50%;background:rgba(148,163,184,0.45);box-shadow:0 0 10px rgba(148,163,184,0.2)}
+    .stage-step.active{color:#e0f2fe;border-color:rgba(6,182,212,0.4);background:rgba(6,182,212,0.1)}
+    .stage-step.active::before{background:#06b6d4;box-shadow:0 0 16px rgba(6,182,212,0.75)}
+    .stage-step.done{color:#bbf7d0;border-color:rgba(16,185,129,0.35);background:rgba(16,185,129,0.09)}
+    .stage-step.done::before{background:#10b981;box-shadow:0 0 14px rgba(16,185,129,0.65)}
+
+    /* LOGS */
+    .logs{max-height:320px;overflow-y:auto;background:rgba(0,0,0,0.35);padding:14px;border-radius:12px;font-family:'Courier New','Courier',monospace;font-size:12px;color:#86efac;border:1.5px solid rgba(16,185,129,0.18);line-height:1.6;box-shadow:inset 0 2px 8px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);animation:chartFadeIn 600ms cubic-bezier(0.34,1.56,0.64,1) 200ms backwards;transition:all 0.3s ease}
+    .logs:hover{border-color:rgba(16,185,129,0.3);box-shadow:inset 0 2px 8px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05), 0 0 20px rgba(16,185,129,0.15)}
+    .logs::-webkit-scrollbar{width:6px}
+    .logs::-webkit-scrollbar-track{background:transparent}
+    .logs::-webkit-scrollbar-thumb{background:rgba(16,185,129,0.3);border-radius:3px}
+    .logs::-webkit-scrollbar-thumb:hover{background:rgba(16,185,129,0.5)}
+    .small{font-size:12px;color:var(--muted);font-weight:500;display:block;margin-bottom:4px}
+    label.small{margin-bottom:8px}
+    .chip{display:inline-flex;gap:8px;align-items:center;padding:6px 12px;background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.15);border-radius:12px;font-size:12px;color:rgba(255,255,255,0.7);margin-right:8px;margin-bottom:8px}
+    
+    /* DECISION BADGES */
+    .decision-badge { display:inline-block;padding:12px 24px;border-radius:10px;font-weight:900;letter-spacing:1.5px;min-width:100px;text-align:center;transition:var(--transition);font-size:16px;text-transform:uppercase;box-shadow:inset 0 1px 0 rgba(255,255,255,0.2)}
+    .decision-badge.fake { background:linear-gradient(135deg, #ef4444, #dc2626); color:#fff; box-shadow:0 12px 40px rgba(239,68,68,0.4), inset 0 1px 0 rgba(255,255,255,0.2), 0 0 20px rgba(239,68,68,0.3); transform:scale(1.08); animation:pulseFake 2s ease-in-out infinite; }
+    .decision-badge.real { background:linear-gradient(135deg, #10b981, #059669); color:#fff; box-shadow:0 12px 40px rgba(16,185,129,0.4), inset 0 1px 0 rgba(255,255,255,0.2), 0 0 20px rgba(16,185,129,0.3); font-size:16px; transform:scale(1.0); animation:pulseReal 2s ease-in-out infinite; }
+    @keyframes pulseFake{0%,100%{box-shadow:0 12px 40px rgba(239,68,68,0.4), inset 0 1px 0 rgba(255,255,255,0.2), 0 0 20px rgba(239,68,68,0.3)}50%{box-shadow:0 12px 50px rgba(239,68,68,0.5), inset 0 1px 0 rgba(255,255,255,0.3), 0 0 30px rgba(239,68,68,0.4)}}
+    @keyframes pulseReal{0%,100%{box-shadow:0 12px 40px rgba(16,185,129,0.4), inset 0 1px 0 rgba(255,255,255,0.2), 0 0 20px rgba(16,185,129,0.3)}50%{box-shadow:0 12px 50px rgba(16,185,129,0.5), inset 0 1px 0 rgba(255,255,255,0.3), 0 0 30px rgba(16,185,129,0.4)}}
+
+    /* FULL PROCESSING */
+    .thumb-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:14px;margin-top:14px;animation:fadeInUp 600ms cubic-bezier(0.34,1.56,0.64,1) 400ms backwards;padding:14px;background:rgba(16,185,129,0.03);border-radius:12px;border:1px solid rgba(16,185,129,0.08)}
+    .thumb-grid img{width:100%;height:100px;object-fit:cover;border-radius:12px;border:1.5px solid rgba(16,185,129,0.18);transition:var(--transition);box-shadow:0 8px 24px rgba(0,0,0,0.25), 0 0 15px rgba(16,185,129,0.15);cursor:pointer;animation:chartFadeIn 500ms cubic-bezier(0.34,1.56,0.64,1) backwards}
+    .thumb-grid img:nth-child(1){animation-delay:100ms}
+    .thumb-grid img:nth-child(2){animation-delay:150ms}
+    .thumb-grid img:nth-child(3){animation-delay:200ms}
+    .thumb-grid img:nth-child(4){animation-delay:250ms}
+    .thumb-grid img:nth-child(5){animation-delay:300ms}
+    .thumb-grid img:nth-child(6){animation-delay:350ms}
+    .thumb-grid img:hover{border-color:var(--accent);box-shadow:0 12px 40px rgba(16,185,129,0.35), 0 0 30px rgba(16,185,129,0.3), 0 0 15px rgba(6,182,212,0.15);transform:translateY(-6px) scale(1.04);filter:brightness(1.1)}
+    .final-decision{margin-top:20px;font-weight:900;font-size:48px;text-align:center;letter-spacing:-2px;text-transform:uppercase;transition:var(--transition);animation:fadeInScale 600ms cubic-bezier(0.34,1.56,0.64,1)}
+    @keyframes fadeInScale{from{opacity:0;transform:scale(0.8)}to{opacity:1;transform:scale(1)}}
+    .final-decision.fake{background:linear-gradient(135deg, #ef4444, #dc2626);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;text-shadow:0 12px 40px rgba(239,68,68,0.3);animation:pulseFinal 2s ease-in-out infinite;filter:drop-shadow(0 0 15px rgba(239,68,68,0.25))}
+    .final-decision.real{background:linear-gradient(135deg, #10b981, #06b6d4);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;animation:pulseFinal 2s ease-in-out infinite;filter:drop-shadow(0 0 15px rgba(16,185,129,0.25))}
+    @keyframes pulseFinal{0%,100%{filter:brightness(1) drop-shadow(0 0 15px rgba(16,185,129,0.2))}50%{filter:brightness(1.15) drop-shadow(0 0 25px rgba(16,185,129,0.35))}}
+
+    /* TOGGLES ENHANCED */
+    .toggles{display:flex;flex-wrap:wrap;gap:12px;margin-top:14px;animation:fadeInUp 600ms cubic-bezier(0.34,1.56,0.64,1) 300ms backwards;transition:var(--transition);padding:14px;background:rgba(16,185,129,0.04);border-radius:12px;border:1px solid rgba(16,185,129,0.08)}
+    .toggle{display:inline-flex;align-items:center;gap:8px;background:rgba(16,185,129,0.1);padding:8px 12px;border-radius:10px;color:rgba(255,255,255,0.7);font-size:13px;border:1.5px solid rgba(16,185,129,0.22);cursor:pointer;transition:all 0.25s ease;font-weight:500;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);box-shadow:inset 0 1px 2px rgba(255,255,255,0.05), 0 0 10px rgba(16,185,129,0.15)}
+    .toggle:hover{background:rgba(16,185,129,0.16);border-color:var(--accent);color:var(--accent);transform:translateY(-3px) scale(1.02);box-shadow:inset 0 1px 2px rgba(255,255,255,0.08), 0 0 20px rgba(16,185,129,0.3), 0 0 10px rgba(6,182,212,0.15)}
+    .toggle:active{animation:buttonClickPress 300ms ease-out}
+    .toggle input{width:16px;height:16px;cursor:pointer;accent-color:var(--accent);transition:all 0.25s ease}
+
+    /* VIDEOS */
+    video{width:100%;max-height:420px;border-radius:14px;background:#000;display:block;border:1.5px solid rgba(16,185,129,0.18);box-shadow:0 12px 40px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.08), 0 0 20px rgba(16,185,129,0.15);transition:var(--transition);animation:chartFadeIn 700ms cubic-bezier(0.34,1.56,0.64,1) backwards}
+    video:hover{border-color:rgba(16,185,129,0.35);box-shadow:0 16px 50px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1), 0 0 30px rgba(16,185,129,0.25), 0 0 50px rgba(16,185,129,0.1);transform:translateY(-4px) scale(1.02)}
+    
+    /* ENHANCED FAKE SEGMENT STYLING */
+    .segment{margin-bottom:28px;padding:18px;background:rgba(239,68,68,0.06);border-radius:14px;border:2px solid rgba(239,68,68,0.25);transition:all 300ms cubic-bezier(0.34,1.56,0.64,1);box-shadow:0 8px 24px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.03), 0 0 30px rgba(239,68,68,0.25), 0 0 60px rgba(239,68,68,0.1);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);animation:chartFadeIn 600ms cubic-bezier(0.34,1.56,0.64,1) backwards, segmentPulse 2.5s ease-in-out infinite;position:relative}
+    .segment::before{content:'⚠️ Manipulated Segment';position:absolute;top:-28px;left:16px;font-size:12px;font-weight:700;color:#ef4444;text-transform:uppercase;letter-spacing:0.5px;text-shadow:0 0 10px rgba(239,68,68,0.4);animation:labelFloatIn 600ms cubic-bezier(0.34,1.56,0.64,1) 100ms backwards}
+    .segment:hover{border-color:#ef4444;background:rgba(239,68,68,0.12);box-shadow:0 16px 40px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.08), 0 0 50px rgba(239,68,68,0.4), 0 0 100px rgba(239,68,68,0.2);transform:translateY(-6px) scale(1.03);border-color:#ef4444}
+    .segment video{width:100%;max-height:280px;border-radius:10px;background:#000;margin-top:10px;border:1.5px solid rgba(239,68,68,0.3);transition:all 300ms ease;box-shadow:0 8px 24px rgba(239,68,68,0.2), inset 0 1px 0 rgba(255,255,255,0.05)}
+    .segment video:hover{border-color:#ef4444;box-shadow:0 12px 32px rgba(239,68,68,0.35), inset 0 1px 0 rgba(255,255,255,0.08), 0 0 40px rgba(239,68,68,0.3);transform:scale(1.02);filter:brightness(1.1)}
+    
+    /* SEGMENT ANIMATIONS */
+    @keyframes segmentPulse{0%,100%{box-shadow:0 8px 24px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.03), 0 0 30px rgba(239,68,68,0.25), 0 0 60px rgba(239,68,68,0.1)}50%{box-shadow:0 8px 24px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.03), 0 0 50px rgba(239,68,68,0.4), 0 0 100px rgba(239,68,68,0.25)}}
+    @keyframes labelFloatIn{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}
+    
+    /* LOADER */
+    .loader{display:inline-block;width:12px;height:12px;border-radius:50%;background:var(--accent);animation:loaderBounce 1.4s infinite;margin-right:8px}
+    @keyframes loaderBounce{0%,80%,100%{opacity:0.3;transform:scale(1)}40%{opacity:1;transform:scale(1.2)}}
+    .loader-dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--accent);margin-right:6px;animation:loaderDot 1.4s infinite}
+    .loader-dot:nth-child(2){animation:loaderDot 1.4s 0.2s infinite}
+    .loader-dot:nth-child(3){animation:loaderDot 1.4s 0.4s infinite}
+    @keyframes loaderDot{0%,60%,100%{opacity:0.3;transform:translateY(0)}30%{opacity:1;transform:translateY(-12px)}}
+    
+    /* MESSAGES */
+    .msg{padding:14px 18px;border-radius:12px;margin-bottom:12px;display:flex;align-items:center;gap:12px;border:1.5px solid;font-size:13px;animation:messageSlide 400ms cubic-bezier(0.34,1.56,0.64,1);font-weight:600;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);box-shadow:0 8px 32px rgba(0,0,0,0.25)}
+    @keyframes messageSlide{from{opacity:0;transform:translateY(-20px);right:-100%}to{opacity:1;transform:translateY(0);right:0}}
+    .msg.info{background:rgba(59,130,246,0.15);border-color:rgba(59,130,246,0.35);color:#93c5fd;box-shadow:0 8px 32px rgba(59,130,246,0.2), 0 0 20px rgba(59,130,246,0.15)}
+    .msg.success{background:rgba(16,185,129,0.15);border-color:rgba(16,185,129,0.35);color:#86efac;box-shadow:0 8px 32px rgba(16,185,129,0.2), 0 0 20px rgba(16,185,129,0.15)}
+    .msg.error{background:rgba(239,68,68,0.15);border-color:rgba(239,68,68,0.35);color:#fca5a5;box-shadow:0 8px 32px rgba(239,68,68,0.2), 0 0 20px rgba(239,68,68,0.15)}
+    
+    /* INPUT STYLES */
+    input[type="file"],input[type="email"],input[type="password"],input[type="text"]{background:rgba(255,255,255,0.06);border:1.5px solid rgba(16,185,129,0.15);color:#f1f5f9;padding:12px 14px;border-radius:10px;font-size:14px;transition:var(--transition);width:100%;font-weight:500;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);box-shadow:inset 0 2px 8px rgba(0,0,0,0.1), 0 0 10px rgba(16,185,129,0.1);animation:fadeInUp 500ms cubic-bezier(0.34,1.56,0.64,1) 200ms backwards}
+    input[type="file"],input[type="email"],input[type="password"],input[type="text"]:hover:not(:focus){background:rgba(255,255,255,0.08);border-color:rgba(16,185,129,0.3);box-shadow:inset 0 2px 8px rgba(0,0,0,0.1), 0 0 15px rgba(16,185,129,0.2), 0 0 8px rgba(6,182,212,0.1)}
+    input[type="file"]::file-selector-button{background:linear-gradient(135deg, var(--accent), #06b6d4);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-weight:700;margin-right:10px;transition:var(--transition);text-transform:uppercase;letter-spacing:0.5px;font-size:12px;box-shadow:0 8px 24px rgba(16,185,129,0.25), 0 0 15px rgba(16,185,129,0.2)}
+    input[type="file"]::file-selector-button:hover{transform:translateY(-2px) scale(1.02);box-shadow:0 12px 32px rgba(16,185,129,0.35), 0 0 25px rgba(16,185,129,0.3)}
+    input[type="file"]::file-selector-button:active{animation:buttonClickPress 300ms ease-out}
+    /* INPUT LABEL POLISH */
+    label.small{display:block;margin-bottom:8px;font-size:12px;color:rgba(255,255,255,0.7);font-weight:600;text-transform:uppercase;letter-spacing:0.3px;transition:color 300ms ease}
+    label.small:hover{color:rgba(255,255,255,0.9)}
+    
+    /* INFO CHIPS & SUMMARY */
+    .chip{display:inline-flex;gap:8px;align-items:center;padding:8px 12px;background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.15);border-radius:10px;font-size:12px;color:rgba(255,255,255,0.75);font-weight:500;margin-right:8px;margin-bottom:8px;transition:all 300ms ease;backdrop-filter:blur(4px)}
+    .chip:hover{background:rgba(16,185,129,0.12);border-color:rgba(16,185,129,0.25);color:rgba(255,255,255,0.9)}
+    .chip.small{padding:6px 10px;font-size:11px}
+    
+    
+    /* RESULT TITLE STYLING */
+    .result-title{display:flex;justify-content:space-between;align-items:flex-start;transition:var(--transition);margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid rgba(16,185,129,0.1)}
+    
+    /* SECTION TRANSITIONS & POLISH */
+    section{animation:fadeInUp 500ms cubic-bezier(0.34,1.56,0.64,1);transition:var(--transition);margin-top:32px;padding-top:32px;border-top:1px solid rgba(16,185,129,0.12);position:relative}
+    section:first-of-type{margin-top:0;padding-top:0;border-top:none}
+    /* ENHANCED CONTROL ALIGNMENT */
+    div[style*="display:flex"][style*="margin-top:12px"]{align-items:center!important;margin-top:14px!important}
+    div[style*="display:flex"][style*="margin-top:8px"]{align-items:center!important;margin-top:10px!important}
+    div[style*="display:flex"][style*="gap:10px"] input{margin-right:2px}
+    
+    /* BUTTON GROUP STYLING */
+    div[style*="display:flex"][style*="gap:12px"] .btn{margin-bottom:4px}
+    div[style*="display:flex"][style*="gap:12px"] .btn + .btn{margin-left:4px}
+    
+    /* SMOOTH VISIBILITY TRANSITIONS */
+    [style*="display:block"]{animation:fadeInUp 500ms cubic-bezier(0.34,1.56,0.64,1)}
+    
+    /* ELEMENT TRANSITIONS */
+    nav{transition:var(--transition)}
+    button{transition:var(--transition)}
+    a{transition:var(--transition)}
+    input, textarea, select{transition:var(--transition)}
+    label{transition:var(--transition)}
+    
+    /* SECTION HEADINGS POLISH */
+    section h2{position:relative;padding-bottom:12px;margin-bottom:20px;border-bottom:1.5px solid rgba(16,185,129,0.12)}
+    section h2::before{content:'';position:absolute;bottom:-1.5px;left:0;height:1.5px;width:60px;background:linear-gradient(90deg, var(--accent), var(--accent2));border-radius:999px}
+    @keyframes cardSlideUp{from{opacity:0;transform:translateY(40px) scale(0.97)}to{opacity:1;transform:translateY(0) scale(1)}}
+    @keyframes chartFadeIn{from{opacity:0;transform:scale(0.9)}to{opacity:1;transform:scale(1)}}
+    @keyframes cardLiftHover{from{transform:translateY(0)}to{transform:translateY(-12px)}}
+    @keyframes shakeWiggle{0%,100%{transform:translateX(0)}20%{transform:translateX(-2px)}40%{transform:translateX(2px)}60%{transform:translateX(-2px)}80%{transform:translateX(2px)}}
+    @keyframes resultShakeGlow{0%{transform:scale(1);filter:brightness(1)}20%,40%,60%,80%{transform:scale(1.05);filter:brightness(1.2)}100%{transform:scale(1);filter:brightness(1)}}
+    @keyframes realScaleGlow{from{opacity:0;transform:scale(0.8)}to{opacity:1;transform:scale(1)}}
+    @keyframes buttonHoverGlow{from{transform:translateY(0) scale(1)}to{transform:translateY(-4px) scale(1.05)}}
+    @keyframes buttonClickPress{0%{transform:translateY(-3px) scale(1.05)}50%{transform:translateY(0) scale(0.98)}100%{transform:translateY(-3px) scale(1.05)}}
+    @keyframes progressBarFill{from{width:0;opacity:0}to{width:100%;opacity:1}}
+    @keyframes pulseGlow{0%,100%{box-shadow:0 0 20px currentColor}50%{box-shadow:0 0 40px currentColor}}
+    @keyframes slideInLeft{from{opacity:0;transform:translateX(-30px)}to{opacity:1;transform:translateX(0)}}
+    @keyframes slideInRight{from{opacity:0;transform:translateX(30px)}to{opacity:1;transform:translateX(0)}}
+    @keyframes tooltipAppear{from{opacity:0;transform:translateY(-8px) scale(0.95)}to{opacity:1;transform:translateY(0) scale(1)}}
+    
+    /* AI SYSTEM ANIMATIONS */
+    @keyframes textFadeInOut{0%{opacity:0.5}50%{opacity:1}100%{opacity:0.5}}
+    @keyframes typingEffect{0%{opacity:0;width:0}50%{opacity:1}100%{opacity:1;width:auto}}
+    @keyframes dotBounce{0%{opacity:0.4;transform:translateY(0)}50%{opacity:1;transform:translateY(-8px)}100%{opacity:0.4;transform:translateY(0)}}
+    @keyframes aiPulse{0%{color:rgba(16,185,129,0.6);text-shadow:0 0 10px rgba(16,185,129,0.4)}50%{color:rgba(16,185,129,1);text-shadow:0 0 20px rgba(16,185,129,0.8)}100%{color:rgba(16,185,129,0.6);text-shadow:0 0 10px rgba(16,185,129,0.4)}}
+    @keyframes progressPulse{0%,100%{box-shadow:0 0 30px rgba(16,185,129,0.5), 0 0 15px rgba(6,182,212,0.3), inset 0 1px 0 rgba(255,255,255,0.3), 0 0 50px rgba(16,185,129,0.1)}50%{box-shadow:0 0 50px rgba(16,185,129,0.8), 0 0 30px rgba(6,182,212,0.5), inset 0 1px 0 rgba(255,255,255,0.4), 0 0 80px rgba(16,185,129,0.3)}}
+    
+    /* FORM CONTROL GROUPS */
+    .form-group{margin-bottom:16px;display:flex;flex-direction:column;gap:8px}
+    
+    /* STATUS TEXT STYLING */
+    .status-text{animation:textFadeInOut 2s ease-in-out infinite;font-weight:600;color:#86efac;transition:color 300ms ease;padding:4px 8px;border-radius:8px;background:rgba(16,185,129,0.06)}
+    .status-text.processing{color:var(--accent);animation:aiPulse 1.5s ease-in-out infinite}
+    
+    /* ALIGN FLEX CONTROLS */
+    div[style*="display:flex"][style*="gap:12px"]{align-items:center!important}
+    div[style*="display:flex"][style*="gap:10px"]{align-items:center!important}
+    
+    /* AI PROCESSING INDICATOR */
+    .ai-indicator{display:inline-flex;gap:4px;align-items:center;margin-left:10px;vertical-align:middle}
+    .ai-indicator .dot{width:6px;height:6px;border-radius:50%;background:var(--accent);animation:dotBounce 1.4s infinite;box-shadow:0 0 10px rgba(16,185,129,0.5)}
+    .ai-indicator .dot:nth-child(1){animation-delay:0ms}
+    .ai-indicator .dot:nth-child(2){animation-delay:200ms}
+    .ai-indicator .dot:nth-child(3){animation-delay:400ms}
+    .ai-indicator.active{opacity:1}
+    .ai-indicator.inactive{opacity:0;display:none}
+    
+    /* ENHANCED PROGRESS BAR PULSE */
+    .progress{animation:progressPulse 3s ease-in-out infinite}
+    
+    /* DRAMATIC RESULT DISPLAY */
+    .result-highlight{position:relative;display:inline-block;padding:40px 60px;border-radius:16px;transition:all 300ms cubic-bezier(0.34,1.56,0.64,1)}
+    .result-highlight::before{content:'';position:absolute;inset:0;border-radius:16px;opacity:0;filter:blur(30px);transition:all 300ms ease;z-index:-1}
+    
+    /* RESULT CONTAINER WITH GLOW BACKGROUND */
+    .result-container{position:relative;margin:24px auto;text-align:center;padding:20px;background:rgba(16,185,129,0.03);border-radius:12px;border:1px solid rgba(16,185,129,0.08)}
+    
+    /* FAKE RESULT STYLES */
+    .result-highlight.fake{animation:fakeResultEntrance 800ms cubic-bezier(0.34,1.56,0.64,1)}
+    .result-highlight.fake::before{background:linear-gradient(135deg, rgba(239,68,68,0.4), rgba(220,38,38,0.3));opacity:1;box-shadow:0 0 100px rgba(239,68,68,0.5), 0 0 200px rgba(239,68,68,0.3)}
+    .result-highlight.fake{animation:fakeResultEntrance 800ms cubic-bezier(0.34,1.56,0.64,1), resultFakeShake 600ms ease-out, fakeResultPulse 2s ease-in-out infinite}
+    
+    /* REAL RESULT STYLES */
+    .result-highlight.real{animation:realResultEntrance 800ms cubic-bezier(0.34,1.56,0.64,1)}
+    .result-highlight.real::before{background:linear-gradient(135deg, rgba(16,185,129,0.4), rgba(6,182,212,0.3));opacity:1;box-shadow:0 0 100px rgba(16,185,129,0.5), 0 0 200px rgba(16,185,129,0.3)}
+    .result-highlight.real{animation:realResultEntrance 800ms cubic-bezier(0.34,1.56,0.64,1), realResultPulse 2.5s ease-in-out infinite}
+    
+    /* RESULT ICONS */
+    .result-icon{font-size:24px;margin-right:12px;display:inline-block;vertical-align:middle;animation:iconBounce 600ms cubic-bezier(0.34,1.56,0.64,1)}
+    .result-highlight.fake .result-icon{color:#ef4444;animation:iconShake 600ms ease-out;text-shadow:0 0 20px rgba(239,68,68,0.6)}
+    .result-highlight.real .result-icon{color:#10b981;animation:iconBounce 600ms cubic-bezier(0.34,1.56,0.64,1);text-shadow:0 0 20px rgba(16,185,129,0.6)}
+    
+    /* RESULT ANIMATIONS */
+    @keyframes fakeResultEntrance{from{opacity:0;transform:scale(0.5) rotateX(-20deg);filter:blur(10px)}to{opacity:1;transform:scale(1) rotateX(0);filter:blur(0)}}
+    @keyframes realResultEntrance{from{opacity:0;transform:scale(0.6) translateY(-40px);filter:blur(10px)}to{opacity:1;transform:scale(1) translateY(0);filter:blur(0)}}
+    @keyframes resultFakeShake{0%,100%{transform:translateX(0) scale(1)}15%{transform:translateX(-8px) scale(1.02)}30%{transform:translateX(8px) scale(1.02)}45%{transform:translateX(-4px) scale(1.01)}}
+    @keyframes fakeResultPulse{0%,100%{filter:drop-shadow(0 0 20px rgba(239,68,68,0.4))}50%{filter:drop-shadow(0 0 50px rgba(239,68,68,0.8))}}
+    @keyframes realResultPulse{0%,100%{filter:drop-shadow(0 0 20px rgba(16,185,129,0.4))}50%{filter:drop-shadow(0 0 50px rgba(16,185,129,0.8))}}
+    @keyframes iconBounce{from{opacity:0;transform:scale(0) translateY(-20px)}to{opacity:1;transform:scale(1) translateY(0)}}
+    @keyframes iconShake{0%,100%{transform:scale(1) rotate(0)}20%{transform:scale(1.15) rotate(-5deg)}40%{transform:scale(1.1) rotate(5deg)}60%{transform:scale(1.05) rotate(-3deg)}}
+    
+    /* STATS DASHBOARD */
+    .stats-dashboard{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px;margin:20px 0;animation:fadeInUp 600ms cubic-bezier(0.34,1.56,0.64,1) 200ms backwards}
+    .stat-card{background:linear-gradient(135deg, rgba(16,185,129,0.08), rgba(6,182,212,0.06));border:1.5px solid rgba(16,185,129,0.22);border-radius:12px;padding:14px;text-align:center;transition:all 300ms cubic-bezier(0.34,1.56,0.64,1);box-shadow:0 8px 20px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.05), 0 0 20px rgba(16,185,129,0.15);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);animation:statCardEntrance 600ms cubic-bezier(0.34,1.56,0.64,1) backwards}
+    .stat-card:nth-child(1){animation-delay:100ms}
+    .stat-card:nth-child(2){animation-delay:150ms}
+    .stat-card:nth-child(3){animation-delay:200ms}
+    .stat-card:nth-child(4){animation-delay:250ms}
+    .stat-icon{font-size:22px;margin-bottom:6px;display:block;animation:iconBounce 600ms cubic-bezier(0.34,1.56,0.64,1)}
+    .stat-label{font-size:10px;font-weight:700;color:rgba(255,255,255,0.6);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px}
+    .stat-value{font-size:26px;font-weight:900;background:linear-gradient(135deg, #10b981, #06b6d4);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;text-shadow:0 0 15px rgba(16,185,129,0.3)}
+    .stat-card:hover{border-color:var(--accent);background:linear-gradient(135deg, rgba(16,185,129,0.15), rgba(6,182,212,0.1));box-shadow:0 12px 32px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.08), 0 0 40px rgba(16,185,129,0.25), 0 0 20px rgba(6,182,212,0.15);transform:translateY(-4px) scale(1.05)}
+    
+    @keyframes statCardEntrance{from{opacity:0;transform:translateY(20px) scale(0.9)}to{opacity:1;transform:translateY(0) scale(1)}}
+    
+    /* APPLY ANIMATIONS TO CARDS */
+    .card{animation:cardSlideUp 600ms cubic-bezier(0.34,1.56,0.64,1) backwards}
+    .card:nth-child(1){animation-delay:100ms}
+    .card:nth-child(2){animation-delay:200ms}
+    .card:nth-child(3){animation-delay:300ms}
+    
+    /* APPLY ANIMATIONS TO BUTTONS ON HOVER */
+    .btn{transition:all 300ms cubic-bezier(0.34,1.56,0.64,1)}
+    .btn:hover{animation:buttonHoverGlow 300ms ease-out forwards}
+    .btn:active{animation:buttonClickPress 400ms ease-out}
+    
+    /* APPLY ANIMATIONS TO HERO */
+    .hero{animation:fadeInUp 700ms cubic-bezier(0.34,1.56,0.64,1)}
+    .hero-left h2{animation:slideInLeft 600ms cubic-bezier(0.34,1.56,0.64,1) 200ms backwards}
+    .hero-left p{animation:slideInLeft 600ms cubic-bezier(0.34,1.56,0.64,1) 300ms backwards}
+    .hero-right{animation:slideInRight 600ms cubic-bezier(0.34,1.56,0.64,1) 300ms backwards}
+    
+    /* APPLY ANIMATIONS TO DECISION BADGES */
+    .decision-badge.fake{animation:resultShakeGlow 1.2s ease-in-out infinite !important}
+    .decision-badge.real{animation:realScaleGlow 600ms cubic-bezier(0.34,1.56,0.64,1) !important}
+    
+    /* APPLY ANIMATIONS TO FINAL DECISION */
+    .final-decision.fake{animation:shakeWiggle 600ms ease-out, resultShakeGlow 2s ease-in-out infinite !important}
+    .final-decision.real{animation:realScaleGlow 600ms cubic-bezier(0.34,1.56,0.64,1) !important}
+    
+    /* PROGRESS BAR SMOOTH FILL */
+    .progress > i{animation:progressBarFill 2s cubic-bezier(0.25,0.46,0.45,0.94), neonGlowProgress 2s ease-in-out infinite !important}
+    
+    /* SMOOTH HOVER EFFECTS */
+    .toggle:active{animation:buttonClickPress 300ms ease-out}
+    .nav-btn:active{animation:buttonClickPress 300ms ease-out}
+    
+    /* LOGS/TEXTAREA FADE IN */
+    .logs{animation:chartFadeIn 600ms cubic-bezier(0.34,1.56,0.64,1) 200ms backwards}
+    
+    /* CHARTS CONTAINER */
+    .charts, .charts-row{margin-top:14px;padding:12px;background:rgba(16,185,129,0.03);border:1px solid rgba(16,185,129,0.08);border-radius:12px;transition:var(--transition)}
+    .chart-card{padding:10px;background:rgba(255,255,255,0.02);border-radius:10px;transition:var(--transition)}
+    
+    /* RESPONSIVE */
+    /* ENHANCED VISUAL SEPARATORS */
+    .result-title{margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid rgba(16,185,129,0.1)}
+    [id$="BlockFull"],[id$="BlockEarly"]{margin-top:18px;padding-top:14px;border-top:1px solid rgba(16,185,129,0.08)}
+    
+    @media (max-width:1024px){ 
+      .grid{grid-template-columns:1fr;gap:24px}
+      .hero{flex-direction:column;align-items:flex-start;gap:32px;padding:32px}
+      .hero-right{width:100%}
+    }
+    @media (max-width:640px){ 
+      .hero{padding:22px;gap:20px;border-radius:12px}
+      .hero-left h2{font-size:28px}
+      .header-inner{padding:12px 14px;gap:12px}
+      .logo{width:38px;height:38px;border-radius:10px;font-size:16px}
+      .nav-btn{padding:8px 12px;font-size:12px;border-radius:10px}
+      video{max-height:280px;border-radius:10px}
+      .card{padding:18px;border-radius:12px;margin-bottom:10px}
+      .btn{padding:10px 16px;font-size:12px;border-radius:8px}
+      .final-decision{font-size:36px}
+      .thumb-grid{grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:10px;padding:10px;border-radius:10px}
+      .wrap{margin:20px auto;padding:12px}
+    }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <div class="brand">
+        <div class="logo"> <img src="/static/logo11.png" alt="Deepfake Defender Logo"></div>
+        <div class="brand-text">
+          <h1>Deepfake Defender</h1>
+          <!-- <p>AI-Powered Video Authenticity Detection</p> -->
+        </div>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:16px;flex:1;justify-content:center;flex-wrap:wrap">
+        <nav class="top-nav" id="topNav">
+          <button class="nav-btn active" data-section="home">Home</button>
+          <button class="nav-btn" data-section="early">Early Detection</button>
+          <button class="nav-btn" data-section="full">Full Video Processing</button>
+          <button class="nav-btn" data-section="webcam">🎥 Live Detection</button>
+          <button class="nav-btn" data-section="subscription">Pricing</button>
+          <button class="nav-btn" data-section="about">About</button>
+        </nav>
+      </div>
+
+      <div class="nav-auth" id="navAuth">
+        <button class="nav-btn" id="loginNavBtn">Login</button>
+        <button class="nav-btn secondary" id="signupNavBtn">Sign Up</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <section id="homeSection">
+      <div class="hero">
+        <div class="hero-left">
+          <h2>Welcome to Deepfake Defender</h2>
+          <p>Detect AI-generated deepfakes in videos using advanced ConvNeXt neural networks. Choose between fast early detection or comprehensive full-video analysis.</p>
+          <div style="margin-top:20px;display:flex;gap:12px;flex-wrap:wrap">
+            <button class="btn" id="gotoEarlyBtn">⚡ Start Early Detection</button>
+            <button class="btn secondary" id="gotoFullBtn">🎬 Full Video Processing</button>
+          </div>
+        </div>
+        <div class="hero-right">
+          <h3>How It Works</h3>
+          <p>🔍 <strong>Early Detection</strong><br>Quickly analyzes face crops with early stopping when deep fakes detected</p>
+          <p style="margin-top:12px">📹 <strong>Full Processing</strong><br>Scans entire video, extracts manipulated segments, thumbnails & detailed analysis</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- EARLY Detection section -->
+    <section id="earlySection" style="display:none; margin-top:18px">
+      <div class="grid">
+        <div class="card">
+          <div class="upload-area">
+            <label class="small">Choose a video file (mp4, mov, avi, mkv, webm)</label>
+            <div style="display:flex;gap:12px;align-items:center">
+              <input id="videoInput" type="file" accept="video/*">
+              <button id="analyzeBtn" class="btn">Analyze Early</button>
+              <button id="resetBtn" class="btn secondary">Reset</button>
+            </div>
+
+            <div class="toggles">
+              <label class="toggle"><input type="checkbox" id="showLogEarly" checked> Show frames log</label>
+              <!-- <label class="toggle"><input type="checkbox" id="showMergedEarly" checked> Show merged clip</label> -->
+              <label class="toggle"><input type="checkbox" id="showCsvEarly" checked> Show CSV link</label>
+            </div>
+
+            <div style="display:flex;gap:12px;align-items:center;margin-top:12px">
+              <div style="flex:1"><div class="progress"><i id="progressBar"></i></div></div>
+              <div id="statusText" class="status-text small">Idle</div>
+              <div id="aiIndicatorEarly" class="ai-indicator inactive">
+                <div class="dot"></div>
+                <div class="dot"></div>
+                <div class="dot"></div>
+              </div>
+            </div>
+            <div class="processing-stages" id="stagesEarly" aria-label="Early analysis processing stages"></div>
+
+            <div style="display:flex;gap:10px;margin-top:6px;align-items:center">
+              <div class="chip">
+                <div id="decisionBadgeHighlight" class="result-highlight">
+                  <span class="result-icon" id="decisionIcon">—</span>
+                  <span id="decisionBadge" class="decision-badge" style="margin:0">—</span>
+                </div>
+                <span id="decisionSmall" style="margin-left:8px;color:var(--muted)">No result yet</span>
+              </div>
+              <div class="chip small" id="processedInfo">Frames processed: 0</div>
+              <div class="chip small" id="fakeInfo">Fake frames: 0</div>
+            </div>
+
+            <div style="margin-top:12px" id="logBlockEarly">
+              <div class="small">Per-frame log</div>
+              <div id="logs" class="logs">No analysis yet. Click <strong>Analyze Early</strong> to start.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="result-title">
+            <div>
+              <div style="font-weight:700" id="resultHeadline">Results</div>
+              <div class="small" id="summaryText">No run yet</div>
+            </div>
+            <div style="text-align:right">
+              <a id="csvLink" class="btn secondary" style="display:none" download>Download CSV</a>
+            </div>
+          </div>
+
+          <!-- STATS DASHBOARD (EARLY) -->
+          <div class="stats-dashboard" id="statsDashboardEarly" style="display:none">
+            <div class="stat-card">
+              <span class="stat-icon">📊</span>
+              <div class="stat-label">Total Frames</div>
+              <div class="stat-value" id="statTotalFrames">0</div>
+            </div>
+            <div class="stat-card">
+              <span class="stat-icon">❌</span>
+              <div class="stat-label">Fake Frames</div>
+              <div class="stat-value" id="statFakeFrames">0</div>
+            </div>
+            <div class="stat-card">
+              <span class="stat-icon">✓</span>
+              <div class="stat-label">Real Frames</div>
+              <div class="stat-value" id="statRealFrames">0</div>
+            </div>
+            <div class="stat-card">
+              <span class="stat-icon">📈</span>
+              <div class="stat-label">Fake Ratio</div>
+              <div class="stat-value" id="statFakeRatio">0%</div>
+            </div>
+          </div>
+
+          <div class="charts" style="margin-top:12px" id="chartsEarlyBlock">
+            <div><canvas id="pieChart" height="220"></canvas><div class="small" style="margin-top:6px">Frame Classification Distribution</div></div>
+            <div style="margin-top:12px"><canvas id="lineChart" height="240"></canvas><div class="small" style="margin-top:6px">Confidence Scores per Frame</div></div>
+            <div style="margin-top:12px"><canvas id="timelineChart" height="80"></canvas><div class="small" style="margin-top:6px">Frame-wise Prediction Timeline</div></div>
+            <div id="suspiciousArea" style="display:none;margin-top:12px">
+              <div class="small">Suspicious frames:</div>
+              <div id="suspiciousImgs" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"></div>
+            </div>
+          </div>
+
+          <!-- <div style="margin-top:12px" id="mergedBlockEarly">
+            <div style="font-weight:700">Merged clip</div>
+            <div style="margin-top:8px">
+              <video id="mergedVideoEarly" controls preload="metadata" playsinline></video>
+            </div>
+          </div> -->
+        </div>
+      </div>
+    </section>
+
+    <!-- FULL Processing section -->
+    <section id="fullSection" style="display:none; margin-top:18px">
+      <div class="grid">
+        <div class="card">
+          <h2 style="margin:0 0 8px 0">Full Video Processing</h2>
+          <p class="small">This runs a full pass. Uses sliding 1 second windows to detect manipulated content. If any window meets the threshold, the video is labeled FAKE. Manipulated clips, merged clip, thumbnails and CSVs will be produced.</p>
+
+          <div style="margin-top:12px">
+            <label class="small">Choose a video (mp4,mov,avi,mkv,webm)</label>
+            <div style="display:flex;gap:10px;align-items:center;margin-top:8px">
+              <input id="videoInputFull" type="file" accept="video/*">
+              <button id="analyzeFullBtn" class="btn">Analyze Full Video</button>
+              <button id="resetFullBtn" class="btn secondary">Reset</button>
+            </div>
+
+            <div class="toggles">
+              <label class="toggle"><input type="checkbox" id="showLogFull" checked> Show frames log</label>
+              <label class="toggle"><input type="checkbox" id="showMergedFull" checked> Show merged clip</label>
+              <label class="toggle"><input type="checkbox" id="showSegmentsFull" checked> Show per segment clips</label>
+              <label class="toggle"><input type="checkbox" id="showThumbsFull" checked> Show thumbnails</label>
+              <label class="toggle"><input type="checkbox" id="showCsvFull" checked> Show CSV links</label>
+              <label class="toggle"><input type="checkbox" id="showChartsFull" checked> Show charts</label>
+            </div>
+
+            <div class="progress"><i id="progressBarFull"></i></div>
+            <div style="display:flex;gap:12px;margin-top:8px;align-items:center">
+              <div id="statusTextFull" class="status-text small">Idle</div>
+              <div id="aiIndicatorFull" class="ai-indicator inactive">
+                <div class="dot"></div>
+                <div class="dot"></div>
+                <div class="dot"></div>
+              </div>
+              <div class="small" id="countsFull" style="margin-left:18px">Frames: 0   Fake: 0   Segments: 0</div>
+            </div>
+            <div class="processing-stages" id="stagesFull" aria-label="Full analysis processing stages"></div>
+
+            <div style="margin-top:12px" id="logBlockFull">
+              <div class="small">Per-frame log</div>
+              <div id="logsFull" class="logs">No analysis yet. Click <strong>Analyze Full Video</strong> to start.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start">
+            <div>
+              <div style="font-weight:800">Full Processing Results</div>
+              <div class="small" id="summaryTextFull">No run yet</div>
+            </div>
+            <div>
+              <a id="csvLinkFull" class="btn secondary" style="display:none" download>Download per-frame CSV</a><br/>
+              <a id="segmentsCsvLink" class="btn secondary" style="display:none;margin-top:6px" download>Download segments CSV</a>
+            </div>
+          </div>
+
+          <div class="result-container">
+            <div class="result-highlight" id="resultHighlight">
+              <span class="result-icon" id="finalDecisionIcon">—</span>
+              <span class="final-decision" id="finalDecision">—</span>
+            </div>
+          </div>
+
+          <!-- STATS DASHBOARD (FULL) -->
+          <div class="stats-dashboard" id="statsDashboardFull" style="display:none">
+            <div class="stat-card">
+              <span class="stat-icon">📊</span>
+              <div class="stat-label">Total Frames</div>
+              <div class="stat-value" id="statTotalFramesFull">0</div>
+            </div>
+            <div class="stat-card">
+              <span class="stat-icon">❌</span>
+              <div class="stat-label">Fake Frames</div>
+              <div class="stat-value" id="statFakeFramesFull">0</div>
+            </div>
+            <div class="stat-card">
+              <span class="stat-icon">✓</span>
+              <div class="stat-label">Real Frames</div>
+              <div class="stat-value" id="statRealFramesFull">0</div>
+            </div>
+            <div class="stat-card">
+              <span class="stat-icon">📈</span>
+              <div class="stat-label">Fake Ratio</div>
+              <div class="stat-value" id="statFakeRatioFull">0%</div>
+            </div>
+          </div>
+
+          <div style="margin-top:12px" id="mergedBlockFull">
+            <div style="font-weight:700">Merged manipulated only clip</div>
+            <div id="mergedVideoArea" style="display:none;margin-top:8px">
+              <video id="mergedVideo" controls preload="metadata" playsinline></video>
+            </div>
+          </div>
+
+          <div style="margin-top:12px" id="segmentsBlockFull">
+            <div style="font-weight:700">Manipulated clips (per segment)</div>
+            <div id="segmentsList" style="margin-top:8px"></div>
+          </div>
+
+          <div style="margin-top:12px" id="thumbsBlockFull">
+            <div style="font-weight:700">Only manipulated thumbnails</div>
+            <div id="thumbGrid" class="thumb-grid"></div>
+          </div>
+
+          <div style="margin-top:12px" id="chartsBlockFull">
+            <div class="small">Per-frame charts</div>
+            <div class="charts-row" style="margin-top:8px">
+              <div class="chart-card"><canvas id="pieChartFull" height="150"></canvas></div>
+              <div class="chart-card"><canvas id="lineChartFull" height="150"></canvas></div>
+              <div class="chart-card"><canvas id="timelineChartFull" height="60"></canvas></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SUBSCRIPTION section -->
+    <section id="subscriptionSection" style="display:none; margin-top:24px">
+      <div style="text-align:center;margin-bottom:40px">
+        <h2 style="margin:0 0 8px 0;font-size:32px;font-weight:800">Simple, Transparent Pricing</h2>
+        <p style="margin:0;color:var(--muted);font-size:15px">Choose the plan that fits your needs</p>
+      </div>
+      
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:24px">
+        <!-- Free Plan -->
+        <div class="card" style="display:flex;flex-direction:column;border-color:rgba(148,163,184,0.2)">
+          <h3 style="margin:0 0 8px 0;color:var(--muted);font-size:18px">Free Plan</h3>
+          <div style="font-size:24px;font-weight:800;margin:16px 0">$0<span style="font-size:14px;color:var(--muted)">/month</span></div>
+          <div style="margin-bottom:24px;padding:16px;background:rgba(148,163,184,0.05);border-radius:8px;border:1px solid rgba(148,163,184,0.1)">Perfect for getting started</div>
+          
+          <ul style="flex:1;list-style:none;margin:0;padding:0;color:var(--muted);font-size:13px;line-height:2">
+            <li>✓ 5 video analyses/month</li>
+            <li>✓ Early detection only</li>
+            <li>✓ 720p video support</li>
+            <li>✗ Full video processing</li>
+            <li>✗ Batch processing</li>
+            <li>✗ API access</li>
+          </ul>
+          
+          <button class="btn secondary" style="width:100%;margin-top:24px">Get Started</button>
+        </div>
+
+        <!-- Pro Plan -->
+        <div class="card" style="display:flex;flex-direction:column;border-color:var(--accent);border-width:2px;transform:scale(1.05);position:relative">
+          <div style="position:absolute;top:-12px;left:20px;background:linear-gradient(135deg,var(--accent),#06b6d4);color:#fff;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;letter-spacing:0.5px">POPULAR</div>
+          
+          <h3 style="margin:0 0 8px 0;color:var(--accent);font-size:18px">Pro Plan</h3>
+          <div style="font-size:28px;font-weight:800;margin:16px 0;color:var(--accent)">$9<span style="font-size:14px;color:var(--muted)">/month</span></div>
+          <div style="margin-bottom:24px;padding:16px;background:rgba(16,185,129,0.1);border-radius:8px;border:1px solid rgba(16,185,129,0.2)">Best for professionals</div>
+          
+          <ul style="flex:1;list-style:none;margin:0;padding:0;color:var(--muted);font-size:13px;line-height:2">
+            <li>✓ 100 video analyses/month</li>
+            <li>✓ Full video processing</li>
+            <li>✓ 1080p video support</li>
+            <li>✓ Download reports</li>
+            <li>✓ Detailed timestamps</li>
+            <li>✗ Batch processing</li>
+          </ul>
+          
+          <button class="btn" style="width:100%;margin-top:24px">Subscribe Now</button>
+        </div>
+
+        <!-- Premium Plan -->
+        <div class="card" style="display:flex;flex-direction:column;border-color:var(--accent2);border-width:1px">
+          <h3 style="margin:0 0 8px 0;color:var(--accent2);font-size:18px">Premium Plan</h3>
+          <div style="font-size:24px;font-weight:800;margin:16px 0;color:var(--accent2)">$29<span style="font-size:14px;color:var(--muted)">/month</span></div>
+          <div style="margin-bottom:24px;padding:16px;background:rgba(249,115,22,0.08);border-radius:8px;border:1px solid rgba(249,115,22,0.15)">For power users</div>
+          
+          <ul style="flex:1;list-style:none;margin:0;padding:0;color:var(--muted);font-size:13px;line-height:2">
+            <li>✓ Unlimited analyses</li>
+            <li>✓ Full video processing</li>
+            <li>✓ 4K video support</li>
+            <li>✓ Batch processing (10 at once)</li>
+            <li>✓ API access</li>
+            <li>✓ Priority support</li>
+          </ul>
+          
+          <button class="btn danger" style="width:100%;margin-top:24px">Subscribe Now</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- LIVE WEBCAM DETECTION SECTION -->
+    <section id="webcamSection" style="display:none; margin-top:24px">
+      <div class="grid" style="grid-template-columns:1fr 400px">
+        <div class="card">
+          <h2>🎥 Live Webcam Detection</h2>
+          <p class="small">Real-time deepfake detection using your webcam. Frames are analyzed continuously for instant results.</p>
+          
+          <div style="margin-top:16px;position:relative;border-radius:14px;overflow:hidden;background:#000">
+            <video id="webcamVideo" autoplay playsinline muted style="width:100%;max-height:500px;display:block;border-radius:14px;background:#000;border:1.5px solid rgba(16,185,129,0.18)" ></video>
+            <canvas id="webcamCanvas" style="display:none"></canvas>
+            
+            <!-- LIVE INDICATOR OVERLAY -->
+            <div id="webcamIndicator" style="position:absolute;top:12px;right:12px;display:flex;gap:6px;align-items:center;background:rgba(239,68,68,0.2);padding:8px 12px;border-radius:20px;border:1px solid rgba(239,68,68,0.4);animation:pulse 2s ease-in-out infinite;opacity:0">
+              <div style="width:8px;height:8px;border-radius:50%;background:#ef4444;animation:blink 1.5s ease-in-out infinite"></div>
+              <span style="color:#fca5a5;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.5px">LIVE</span>
+            </div>
+          </div>
+
+          <div style="margin-top:14px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+            <button id="startWebcamBtn" class="btn">📹 Start Webcam</button>
+            <button id="stopWebcamBtn" class="btn secondary" style="display:none">⏹ Stop Webcam</button>
+            <div style="flex:1"></div>
+            <div class="small" id="webcamStatus" style="color:var(--muted)">Ready</div>
+          </div>
+
+          <div style="margin-top:14px;padding:12px;background:rgba(16,185,129,0.04);border-radius:12px;border:1px solid rgba(16,185,129,0.08)">
+            <div class="small" style="margin-bottom:8px">⚙️ Detection Settings</div>
+            <div style="display:flex;gap:12px;align-items:center;margin-bottom:8px">
+              <label style="flex:1;display:flex;align-items:center;gap:6px;cursor:pointer;color:rgba(255,255,255,0.7);font-size:12px">
+                <input type="checkbox" id="webcamAutoCapture" checked style="cursor:pointer;width:14px;height:14px">
+                <span>Auto-capture: </span>
+              </label>
+              <select id="captureFreq" style="background:rgba(255,255,255,0.06);border:1px solid rgba(16,185,129,0.15);color:#f1f5f9;padding:6px 10px;border-radius:8px;font-size:12px;cursor:pointer;transition:var(--transition)">
+                <option value="500">2 fps</option>
+                <option value="1000" selected>1 fps</option>
+                <option value="2000">0.5 fps</option>
+              </select>
+            </div>
+            <button id="captureFrameBtn" class="btn small" style="width:100%;margin-top:8px">📸 Capture Frame</button>
+          </div>
+
+          <div style="margin-top:14px" id="webcamLogsBlock">
+            <div class="small">Activity log</div>
+            <div id="webcamLogs" class="logs" style="max-height:200px">Waiting for analysis...</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div style="font-weight:700;margin-bottom:4px">Real-Time Prediction</div>
+          <div class="small" id="webcamTimestamp" style="margin-bottom:12px">No frame captured</div>
+
+          <!-- LIVE RESULT DISPLAY -->
+          <div style="margin-bottom:16px;padding:16px;background:rgba(16,185,129,0.05);border:1.5px solid rgba(16,185,129,0.15);border-radius:12px;text-align:center;min-height:80px;display:flex;flex-direction:column;align-items:center;justify-content:center">
+            <div style="font-size:32px;font-weight:900;margin-bottom:4px" id="webcamPrediction">—</div>
+            <div class="small" style="color:var(--muted)" id="webcamConfidenceLabel">No prediction yet</div>
+            <div style="margin-top:8px;width:100%;height:6px;background:rgba(255,255,255,0.05);border-radius:3px;overflow:hidden;border:1px solid rgba(16,185,129,0.1)">
+              <div id="webcamConfidenceBar" style="width:0%;height:100%;background:linear-gradient(90deg,#10b981,#06b6d4);transition:width 300ms ease;border-radius:3px"></div>
+            </div>
+          </div>
+
+          <!-- STATS DASHBOARD (WEBCAM) -->
+          <div class="stats-dashboard" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div class="stat-card" style="padding:10px">
+              <span class="stat-icon" style="font-size:18px;margin-bottom:4px">📊</span>
+              <div class="stat-label" style="font-size:9px">Frames</div>
+              <div class="stat-value" id="webcamFrameCount" style="font-size:20px">0</div>
+            </div>
+            <div class="stat-card" style="padding:10px">
+              <span class="stat-icon" style="font-size:18px;margin-bottom:4px">⚡</span>
+              <div class="stat-label" style="font-size:9px">FPS</div>
+              <div class="stat-value" id="webcamFPS" style="font-size:20px">0</div>
+            </div>
+            <div class="stat-card" style="padding:10px">
+              <span class="stat-icon" style="font-size:18px;margin-bottom:4px">❌</span>
+              <div class="stat-label" style="font-size:9px">Fakes</div>
+              <div class="stat-value" id="webcamFakeCount" style="font-size:20px">0</div>
+            </div>
+            <div class="stat-card" style="padding:10px">
+              <span class="stat-icon" style="font-size:18px;margin-bottom:4px">⏱</span>
+              <div class="stat-label" style="font-size:9px">Avg Time</div>
+              <div class="stat-value" id="webcamAvgTime" style="font-size:18px">0ms</div>
+            </div>
+          </div>
+
+          <button id="webcamResetBtn" class="btn secondary" style="width:100%;margin-top:12px">🔄 Reset Stats</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="aboutSection" style="display:none; margin-top:24px">
+      <div class="grid" style="grid-template-columns:1fr;gap:24px">
+        <div class="card">
+          <h2>About Deepfake Defender</h2>
+          <p style="margin-bottom:20px">This platform detects whether a video is real or fake using state-of-the-art AI models. It performs early detection for fast results and full video processing for detailed analysis. The system extracts manipulated frames and video segments for further inspection. It is optimized for speed and accuracy using deep learning.</p>
+          
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:24px">
+            <div style="padding:16px;background:rgba(16,185,129,0.08);border-radius:10px;border:1px solid rgba(16,185,129,0.15)">
+              <div style="font-weight:700;font-size:18px;color:var(--accent)">🧠 AI-Powered</div>
+              <p style="margin:8px 0 0 0;font-size:13px">Uses ConvNeXt deep learning model trained on millions of frames</p>
+            </div>
+            <div style="padding:16px;background:rgba(6,182,212,0.08);border-radius:10px;border:1px solid rgba(6,182,212,0.15)">
+              <div style="font-weight:700;font-size:18px;color:#06b6d4">⚡ Fast Detection</div>
+              <p style="margin:8px 0 0 0;font-size:13px">Early stopping mechanism for rapid deepfake identification</p>
+            </div>
+            <div style="padding:16px;background:rgba(249,115,22,0.08);border-radius:10px;border:1px solid rgba(249,115,22,0.15)">
+              <div style="font-weight:700;font-size:18px;color:#f97316">📊 Detailed Analysis</div>
+              <p style="margin:8px 0 0 0;font-size:13px">Extract manipulated segments, thumbnails, and confidence scores</p>
+            </div>
+            <div style="padding:16px;background:rgba(239,68,68,0.08);border-radius:10px;border:1px solid rgba(239,68,68,0.15)">
+              <div style="font-weight:700;font-size:18px;color:#ef4444">🎯 Accurate</div>
+              <p style="margin:8px 0 0 0;font-size:13px">High precision detection with per-frame confidence scores</p>
+            </div>
+          </div>
+
+          <div style="margin-top:24px;padding:16px;background:rgba(255,255,255,0.02);border-radius:10px;border:1px solid rgba(255,255,255,0.05)">
+            <h3 style="margin:0 0 12px 0;font-size:15px">Technology Stack</h3>
+            <p style="margin:0;font-size:13px;color:var(--muted)">Backend: Flask • Face Detection: MTCNN • Classification: ConvNeXt Base • Video Processing: FFmpeg • Frontend: HTML5, CSS3, Chart.js</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+<script>
+  // ========== AUTH MANAGEMENT ==========
+  let currentUser = null;
+  let guestUsage = null;
+  async function initAuth() {
+    const state = await fetch("/api/auth/me").then(r => r.json()).catch(() => ({user:null}));
+    const user = state.user;
+    currentUser = user;
+    guestUsage = state.guest_usage || null;
+    const navAuth = document.getElementById("navAuth");
+    const loginBtn = document.getElementById("loginNavBtn");
+    const signupBtn = document.getElementById("signupNavBtn");
+    
+    if (user) {
+      navAuth.innerHTML = `
+        <div style="color:var(--muted);font-size:13px">👤 ${user.name || user.email}</div>
+        <button class="nav-btn" id="profileBtn">Profile</button>
+        ${user.role === "admin" ? '<button class="nav-btn" id="adminBtn">Admin</button>' : ''}
+        <div class="nav-auth-divider"></div>
+        <button class="nav-btn danger" id="logoutBtn">Logout</button>
+      `;
+      document.getElementById("profileBtn").addEventListener("click", () => window.location.href = "profile.html");
+      const adminBtn = document.getElementById("adminBtn");
+      if(adminBtn) adminBtn.addEventListener("click", () => window.location.href = "admin.html");
+      document.getElementById("logoutBtn").addEventListener("click", async () => {
+        await fetch("/api/auth/logout", {method:"POST"});
+        await initAuth();
+        showSection("home");
+        showToast("Logged out successfully", "success");
+      });
+    } else {
+      navAuth.innerHTML = `
+        <button class="nav-btn" id="loginNavBtn">Login</button>
+        <button class="nav-btn secondary" id="signupNavBtn">Sign Up</button>
+      `;
+      const loginBtn = document.getElementById("loginNavBtn");
+      const signupBtn = document.getElementById("signupNavBtn");
+      loginBtn.addEventListener("click", () => window.location.href = "login.html");
+      signupBtn.addEventListener("click", () => window.location.href = "signup.html");
+      if (guestUsage) {
+        navAuth.insertAdjacentHTML("afterbegin", `<span class="chip small" title="${guestUsage.client_ip}">Guest analysis: unlimited</span>`);
+      }
+    }
+  }
+  initAuth();
+
+  // ========== TOAST MESSAGES ==========
+  function showToast(message, type = "info") {
+    const toast = document.createElement("div");
+    toast.className = `msg ${type}`;
+    toast.style.position = "fixed";
+    toast.style.top = "80px";
+    toast.style.right = "20px";
+    toast.style.zIndex = "1000";
+    toast.style.maxWidth = "400px";
+    toast.style.boxShadow = "0 10px 40px rgba(0,0,0,0.3)";
+    
+    const icon = type === "success" ? "✓" : type === "error" ? "✕" : "ℹ";
+    toast.innerHTML = `<span style="font-weight:700">${icon}</span><span>${message}</span>`;
+    document.body.appendChild(toast);
+    
+    setTimeout(() => toast.remove(), 4000);
+  }
+
+  // ========== LIVE ANALYSIS STAGES ==========
+  const PROCESS_STAGES = [
+    ["uploading", "Uploading"],
+    ["processing", "Processing"],
+    ["frame_extraction", "Frame extraction"],
+    ["face_detection", "Face detection"],
+    ["model_inference", "Model inference"],
+    ["segment_detection", "Segment detection"],
+    ["output_generation", "Output generation"],
+    ["completed", "Completed"]
+  ];
+
+  function initStages(targetId){
+    const el = document.getElementById(targetId);
+    if(!el) return;
+    el.innerHTML = PROCESS_STAGES.map(([key,label]) => `<div class="stage-step" data-stage="${key}">${label}</div>`).join("");
+  }
+
+  function updateStages(targetId, stage){
+    const el = document.getElementById(targetId);
+    if(!el) return;
+    const order = PROCESS_STAGES.map(s => s[0]);
+    const activeIndex = Math.max(0, order.indexOf(stage));
+    Array.from(el.querySelectorAll(".stage-step")).forEach((node, idx) => {
+      node.classList.toggle("done", idx < activeIndex || stage === "completed");
+      node.classList.toggle("active", idx === activeIndex && stage !== "completed");
+    });
+  }
+
+  function startAnalysisJob(mode, file, onProgress){
+    const form = new FormData();
+    form.append("video", file);
+    form.append("mode", mode);
+    return new Promise(async (resolve, reject) => {
+      try {
+        const resp = await fetch("/api/analyze/jobs", {method:"POST", body: form});
+        const payload = await resp.json().catch(()=>({error:"Unexpected server response"}));
+        if(!resp.ok || !payload.ok){
+          reject(new Error(payload.error || "Analysis could not be started"));
+          return;
+        }
+        const source = new EventSource(`/api/analyze/jobs/${payload.job_id}/events`);
+        source.onmessage = (event) => {
+          const data = JSON.parse(event.data);
+          if(data.type === "progress"){
+            onProgress(data);
+          } else if(data.type === "result"){
+            source.close();
+            resolve(data.result);
+          } else if(data.type === "error"){
+            source.close();
+            reject(new Error(data.error || "Analysis failed"));
+          }
+        };
+        source.onerror = () => {
+          source.close();
+          reject(new Error("Lost connection to analysis progress stream"));
+        };
+      } catch (err) {
+        reject(err);
+      }
+    });
+  }
+
+  // ========== NAV and section show ==========
+  const sections = {
+    home: document.getElementById("homeSection"),
+    early: document.getElementById("earlySection"),
+    full: document.getElementById("fullSection"),
+    webcam: document.getElementById("webcamSection"),
+    subscription: document.getElementById("subscriptionSection"),
+    about: document.getElementById("aboutSection")
+  };
+  const navBtns = Array.from(document.querySelectorAll(".nav-btn[data-section]"));
+  
+  function showSection(name){
+    Object.keys(sections).forEach(k => {
+      if(sections[k]) sections[k].style.display = "none";
+    });
+    navBtns.forEach(b => b.classList.remove("active"));
+    const btn = navBtns.find(b => b.dataset.section === name);
+    if(btn) btn.classList.add("active");
+    if(sections[name]) sections[name].style.display = "block";
+    window.scrollTo({top:0,behavior:"smooth"});
+  }
+  
+  showSection("home");
+  navBtns.forEach(b => b.addEventListener("click", () => {
+    const t = b.dataset.section;
+    showSection(t);
+  }));
+  document.getElementById("gotoEarlyBtn").addEventListener("click", () => showSection("early"));
+  document.getElementById("gotoFullBtn").addEventListener("click", () => showSection("full"));
+
+  // ========== TOGGLE HELPER ==========
+  function hookToggle(checkboxId, blockId){
+    const cb = document.getElementById(checkboxId);
+    const blk = document.getElementById(blockId);
+    if(!cb || !blk) return;
+    const apply = () => blk.style.display = cb.checked ? "" : "none";
+    cb.addEventListener("change", apply);
+    apply();
+  }
+
+  // Early toggles
+  hookToggle("showLogEarly","logBlockEarly");
+  hookToggle("showMergedEarly","mergedBlockEarly");
+  hookToggle("showCsvEarly","csvLink");
+
+  // Full toggles
+  hookToggle("showLogFull","logBlockFull");
+  hookToggle("showMergedFull","mergedBlockFull");
+  hookToggle("showSegmentsFull","segmentsBlockFull");
+  hookToggle("showThumbsFull","thumbsBlockFull");
+  hookToggle("showCsvFull","csvLinkFull");
+  hookToggle("showChartsFull","chartsBlockFull");
+
+  // ========== WEBCAM LIVE DETECTION ==========
+  let webcamStream = null;
+  let webcamActive = false;
+  let captureInterval = null;
+  let frameCount = 0;
+  let fakeCount = 0;
+  let lastFrameTime = 0;
+  let frameTimeSum = 0;
+  let frameTimeCount = 0;
+
+  const webcamEl = document.getElementById("webcamVideo");
+  const canvasEl = document.getElementById("webcamCanvas");
+  const startWebcamBtn = document.getElementById("startWebcamBtn");
+  const stopWebcamBtn = document.getElementById("stopWebcamBtn");
+  const captureFrameBtn = document.getElementById("captureFrameBtn");
+  const webcamStatusEl = document.getElementById("webcamStatus");
+  const webcamIndicatorEl = document.getElementById("webcamIndicator");
+  const webcamPredictionEl = document.getElementById("webcamPrediction");
+  const webcamConfidenceLabel = document.getElementById("webcamConfidenceLabel");
+  const webcamConfidenceBar = document.getElementById("webcamConfidenceBar");
+  const webcamTimestampEl = document.getElementById("webcamTimestamp");
+  const webcamLogsEl = document.getElementById("webcamLogs");
+  const webcamFrameCountEl = document.getElementById("webcamFrameCount");
+  const webcamFPS = document.getElementById("webcamFPS");
+  const webcamFakeCountEl = document.getElementById("webcamFakeCount");
+  const webcamAvgTimeEl = document.getElementById("webcamAvgTime");
+  const webcamResetBtn = document.getElementById("webcamResetBtn");
+  const captureFreqSelect = document.getElementById("captureFreq");
+  const autoCaptureCheckbox = document.getElementById("webcamAutoCapture");
+
+  function addWebcamLog(msg){
+    const line = document.createElement("div");
+    line.style.fontSize = "11px";
+    line.style.marginBottom = "4px";
+    line.style.color = "#86efac";
+    line.innerHTML = `[${new Date().toLocaleTimeString()}] ${msg}`;
+    webcamLogsEl.appendChild(line);
+    webcamLogsEl.scrollTop = webcamLogsEl.scrollHeight;
+  }
+
+  async function startWebcam(){
+    try{
+      webcamStatusEl.textContent = "Requesting camera...";
+      webcamStream = await navigator.mediaDevices.getUserMedia({video: {facingMode: "user", width: 320, height: 240}});
+      webcamEl.srcObject = webcamStream;
+      webcamEl.classList.add("active");
+      webcamActive = true;
+      startWebcamBtn.style.display = "none";
+      stopWebcamBtn.style.display = "inline-flex";
+      webcamStatusEl.textContent = "Recording...";
+      webcamIndicatorEl.classList.add("active");
+      addWebcamLog("✓ Webcam started");
+      
+      // Auto-capture enabled by default
+      if(autoCaptureCheckbox.checked) startAutoCapture();
+    }catch(e){
+      addWebcamLog("✕ Camera error: " + e.message);
+      webcamStatusEl.textContent = "Camera error";
+      showToast("Could not access camera: " + e.message, "error");
+    }
+  }
+
+  function stopWebcam(){
+    if(webcamStream){
+      webcamStream.getTracks().forEach(t => t.stop());
+      webcamStream = null;
+    }
+    webcamEl.srcObject = null;
+    webcamEl.classList.remove("active");
+    webcamActive = false;
+    startWebcamBtn.style.display = "inline-flex";
+    stopWebcamBtn.style.display = "none";
+    webcamStatusEl.textContent = "Stopped";
+    webcamIndicatorEl.classList.remove("active");
+    stopAutoCapture();
+    addWebcamLog("✓ Webcam stopped");
+  }
+
+  function startAutoCapture(){
+    if(captureInterval) clearInterval(captureInterval);
+    const freq = parseInt(captureFreqSelect.value);
+    captureInterval = setInterval(() => {
+      if(webcamActive) captureAndAnalyze();
+    }, freq);
+  }
+
+  function stopAutoCapture(){
+    if(captureInterval) clearInterval(captureInterval);
+  }
+
+  async function captureAndAnalyze(){
+    if(!webcamEl || !webcamEl.readyState) return;
+    
+    const ctx = canvasEl.getContext("2d");
+    canvasEl.width = webcamEl.videoWidth;
+    canvasEl.height = webcamEl.videoHeight;
+    ctx.drawImage(webcamEl, 0, 0);
+    
+    frameCount++;
+    lastFrameTime = Date.now();
+    
+    try{
+      // Convert canvas to blob and send to new /analyze_frame endpoint
+      canvasEl.toBlob(async (blob) => {
+        const formData = new FormData();
+        formData.append("frame", blob, "frame.jpg");
+        
+        const startTime = Date.now();
+        const response = await fetch("/analyze_frame", {
+          method: "POST",
+          body: formData
+        });
+        
+        if (!response.ok) {
+          addWebcamLog("✕ API error: " + response.status);
+          return;
+        }
+        
+        const data = await response.json();
+        const elapsed = Date.now() - startTime;
+        
+        frameTimeSum += elapsed;
+        frameTimeCount++;
+        
+        // Handle response
+        if (data.label === "NO FACE") {
+          webcamPredictionEl.textContent = "🔍 NO FACE";
+          webcamPredictionEl.style.color = "#94a3b8";
+          webcamConfidenceLabel.textContent = "No face detected";
+          webcamConfidenceBar.style.width = "0%";
+          addWebcamLog(`Frame ${frameCount}: No face detected (${elapsed}ms)`);
+          return;
+        }
+        
+        if (data.error) {
+          addWebcamLog("✕ Error: " + data.error);
+          return;
+        }
+        
+        // Update prediction display
+        const prediction = data.label === "FAKE" ? "🚨 FAKE" : "✅ REAL";
+        const confidenceValue = data.label === "FAKE" ? data.conf_fake : data.conf_real;
+        const confidence = (confidenceValue * 100).toFixed(1);
+        
+        if(data.label === "FAKE") fakeCount++;
+        
+        webcamPredictionEl.textContent = prediction;
+        webcamPredictionEl.style.color = data.label === "FAKE" ? "#ef4444" : "#10b981";
+        webcamConfidenceLabel.textContent = confidence + "% " + data.label;
+        webcamConfidenceBar.style.width = (confidenceValue * 100) + "%";
+        webcamTimestampEl.textContent = "Last: " + new Date().toLocaleTimeString();
+        
+        // Update stats
+        webcamFrameCountEl.textContent = frameCount;
+        webcamFakeCountEl.textContent = fakeCount;
+        const fps = frameCount > 0 ? (frameCount / (elapsed / 1000)).toFixed(1) : "0";
+        webcamFPS.textContent = fps;
+        const avgTime = frameTimeCount > 0 ? (frameTimeSum / frameTimeCount).toFixed(0) : "0";
+        webcamAvgTimeEl.textContent = avgTime + "ms";
+        
+        const logMsg = `Frame ${frameCount}: ${prediction} (${confidence}% confidence, ${elapsed}ms)`;
+        addWebcamLog(logMsg.substring(0, 70) + "...");
+      }, "image/jpeg", 0.8);
+      
+    }catch(e){
+      addWebcamLog("✕ Error: " + e.message.substring(0, 50));
+      console.error("Capture error:", e);
+    }
+  }
+
+  startWebcamBtn.addEventListener("click", startWebcam);
+  stopWebcamBtn.addEventListener("click", stopWebcam);
+  captureFrameBtn.addEventListener("click", captureAndAnalyze);
+  webcamResetBtn.addEventListener("click", () => {
+    frameCount = 0;
+    fakeCount = 0;
+    frameTimeSum = 0;
+    frameTimeCount = 0;
+    webcamFrameCountEl.textContent = "0";
+    webcamFakeCountEl.textContent = "0";
+    webcamFPS.textContent = "0";
+    webcamAvgTimeEl.textContent = "0ms";
+    webcamPredictionEl.textContent = "—";
+    webcamConfidenceLabel.textContent = "No prediction yet";
+    webcamConfidenceBar.style.width = "0%";
+    webcamLogsEl.innerHTML = "Stats reset ✓";
+    addWebcamLog("Stats cleared");
+  });
+
+  captureFreqSelect.addEventListener("change", () => {
+    if(webcamActive && autoCaptureCheckbox.checked){
+      stopAutoCapture();
+      startAutoCapture();
+    }
+  });
+
+  autoCaptureCheckbox.addEventListener("change", () => {
+    if(webcamActive){
+      if(autoCaptureCheckbox.checked) startAutoCapture();
+      else stopAutoCapture();
+    }
+  });
+
+  // ---------- Early detection UI logic ----------
+  const videoInput = document.getElementById("videoInput");
+  const analyzeBtn = document.getElementById("analyzeBtn");
+  const resetBtn = document.getElementById("resetBtn");
+  const logsEl = document.getElementById("logs");
+  const progressBar = document.getElementById("progressBar");
+  const statusText = document.getElementById("statusText");
+  const decisionBadge = document.getElementById("decisionBadge");
+  const decisionSmall = document.getElementById("decisionSmall");
+  const decisionBadgeHighlight = document.getElementById("decisionBadgeHighlight");
+  const decisionIcon = document.getElementById("decisionIcon");
+  const processedInfo = document.getElementById("processedInfo");
+  const fakeInfo = document.getElementById("fakeInfo");
+  const summaryText = document.getElementById("summaryText");
+  const csvLink = document.getElementById("csvLink");
+  const suspiciousArea = document.getElementById("suspiciousArea");
+  const suspiciousImgs = document.getElementById("suspiciousImgs");
+  const statsDashboardEarly = document.getElementById("statsDashboardEarly");
+  const statTotalFrames = document.getElementById("statTotalFrames");
+  const statFakeFrames = document.getElementById("statFakeFrames");
+  const statRealFrames = document.getElementById("statRealFrames");
+  const statFakeRatio = document.getElementById("statFakeRatio");
+
+  let pieChart, lineChart, timelineChart;
+
+  function resetUI(){
+    logsEl.innerText = "No analysis yet. Click Analyze Early to start.";
+    progressBar.style.width = "0%";
+    statusText.innerText = "Idle";
+    decisionBadge.innerText = "—";
+    decisionBadge.classList.remove("fake","real");
+    decisionBadgeHighlight.classList.remove("fake","real");
+    decisionIcon.innerText = "—";
+    decisionSmall.innerText = "No result yet";
+    processedInfo.innerText = "Frames processed: 0";
+    fakeInfo.innerText = "Fake frames: 0";
+    summaryText.innerText = "No run yet";
+    csvLink.style.display = "none";
+    suspiciousArea.style.display = "none";
+    suspiciousImgs.innerHTML = "";
+    statsDashboardEarly.style.display = "none";
+    statTotalFrames.innerText = "0";
+    statFakeFrames.innerText = "0";
+    statRealFrames.innerText = "0";
+    statFakeRatio.innerText = "0%";
+    initStages("stagesEarly");
+    if(pieChart) pieChart.destroy();
+    if(lineChart) lineChart.destroy();
+    if(timelineChart) timelineChart.destroy();
+  }
+  resetBtn.onclick = ()=>{ videoInput.value=""; resetUI(); };
+
+  /* STATS DASHBOARD UPDATE FUNCTION (EARLY) */
+  function updateStatsEarly(totalFrames, fakeFrames){
+    const realFrames = totalFrames - fakeFrames;
+    const fakeRatio = totalFrames > 0 ? Math.round((fakeFrames / totalFrames) * 100) : 0;
+    statTotalFrames.innerText = totalFrames;
+    statFakeFrames.innerText = fakeFrames;
+    statRealFrames.innerText = realFrames;
+    statFakeRatio.innerText = fakeRatio + "%";
+    statsDashboardEarly.style.display = "grid";
+  }
+
+  /* AI SYSTEM ENHANCEMENTS */
+  const aiIndicatorEarly = document.getElementById("aiIndicatorEarly");
+  const statusMessages = ["🤖 Initializing...", "📊 Scanning frames...", "🧠 Analyzing patterns...", "✨ Finalizing results..."];
+  let statusMessageIndex = 0;
+  let statusCycleInterval = null;
+
+  function startDynamicStatus(){
+    statusMessageIndex = 0;
+    if(statusCycleInterval) clearInterval(statusCycleInterval);
+    statusCycleInterval = setInterval(()=>{
+      statusText.innerText = statusMessages[statusMessageIndex % statusMessages.length];
+      statusText.classList.add("processing");
+      statusMessageIndex++;
+    }, 2000);
+    aiIndicatorEarly.classList.remove("inactive");
+    aiIndicatorEarly.classList.add("active");
+  }
+
+  function stopDynamicStatus(){
+    if(statusCycleInterval) clearInterval(statusCycleInterval);
+    statusText.classList.remove("processing");
+    aiIndicatorEarly.classList.add("inactive");
+    aiIndicatorEarly.classList.remove("active");
+  }
+
+  /* FULL PROCESSING AI ENHANCEMENTS */
+  const aiIndicatorFull = document.getElementById("aiIndicatorFull");
+  let statusCycleIntervalFull = null;
+
+  function startDynamicStatusFull(){
+    statusMessageIndex = 0;
+    if(statusCycleIntervalFull) clearInterval(statusCycleIntervalFull);
+    statusCycleIntervalFull = setInterval(()=>{
+      statusTextFull.innerText = statusMessages[statusMessageIndex % statusMessages.length];
+      statusTextFull.classList.add("processing");
+      statusMessageIndex++;
+    }, 2000);
+    aiIndicatorFull.classList.remove("inactive");
+    aiIndicatorFull.classList.add("active");
+  }
+
+  function stopDynamicStatusFull(){
+    if(statusCycleIntervalFull) clearInterval(statusCycleIntervalFull);
+    statusTextFull.classList.remove("processing");
+    aiIndicatorFull.classList.add("inactive");
+    aiIndicatorFull.classList.remove("active");
+  }
+
+
+  analyzeBtn.onclick = async ()=> {
+    if(!videoInput.files || videoInput.files.length===0){ showToast("Please choose a video file first", "error"); return; }
+    resetUI();
+    const file = videoInput.files[0];
+    const form = new FormData(); form.append("video", file);
+    
+    statusText.innerText = "📤 Uploading..."; 
+    progressBar.style.width = "10%";
+
+    try {
+      startDynamicStatus();
+      updateStages("stagesEarly", "uploading");
+      const data = await startAnalysisJob("early", file, (evt) => {
+        updateStages("stagesEarly", evt.stage);
+        statusText.innerText = `${evt.message || evt.stage} (${Math.round(evt.percent || 0)}%)`;
+        progressBar.style.width = `${Math.max(10, Math.round(evt.percent || 0))}%`;
+      });
+
+      statusText.innerText = "✅ Complete!"; 
+      updateStages("stagesEarly", "completed");
+      stopDynamicStatus();
+      progressBar.style.width = "100%";
+      
+      logsEl.innerText = (data.logs || []).join("\n");
+      summaryText.innerText = data.summary_text || "";
+
+      const finalDecisionStr = (data.final_decision || "").toString().toUpperCase();
+      const isFakeDecision = (data.early_stop_triggered && (data.fake_count||0) > 0) || finalDecisionStr.includes("FAKE");
+
+      decisionBadge.classList.remove("fake","real");
+      if(isFakeDecision){
+        decisionBadge.innerText = "FAKE";
+        decisionBadge.classList.add("fake");
+        decisionBadgeHighlight.classList.remove("real");
+        decisionBadgeHighlight.classList.add("fake");
+        decisionIcon.innerText = "⚠️";
+        decisionSmall.innerText = data.early_stop_triggered ? `⚠️ early stop at frame ${data.early_stop_frame_idx}` : "final decision";
+        showToast("Alert: Deepfake detected!", "error");
+      } else {
+        decisionBadge.innerText = "REAL";
+        decisionBadge.classList.add("real");
+        decisionBadgeHighlight.classList.remove("fake");
+        decisionBadgeHighlight.classList.add("real");
+        decisionIcon.innerText = "✓";
+        decisionSmall.innerText = data.early_stop_triggered ? `early stop at frame ${data.early_stop_frame_idx}` : "final decision";
+        showToast("✓ Video appears authentic", "success");
+      }
+
+      processedInfo.innerText = `Frames processed: ${data.processed_face_frames || 0}`;
+      fakeInfo.innerText = `Fake frames: ${data.fake_count || 0}`;
+      updateStatsEarly(data.processed_face_frames || 0, data.fake_count || 0);
+
+      if(data.csv_url){ csvLink.style.display="inline-block"; csvLink.href = data.csv_url; csvLink.innerText = "📥 Download CSV"; }
+
+      if(data.suspicious_urls && data.suspicious_urls.length>0){
+        suspiciousArea.style.display="block";
+        suspiciousImgs.innerHTML = "";
+        data.suspicious_urls.slice(0,8).forEach(url=>{
+          const img = document.createElement("img");
+          img.src = url;
+          img.style.width="90px"; img.style.height="60px"; img.style.objectFit="cover"; img.style.borderRadius="6px"; img.style.border="1px solid rgba(255,255,255,0.05)";
+          suspiciousImgs.appendChild(img);
+        });
+      }
+
+      const frames = data.frame_indices || [];
+      const confFake = data.conf_fake_values || [];
+      const confReal = data.conf_real_values || [];
+      const labels = data.labels || [];
+
+      const pieCtx = document.getElementById("pieChart").getContext("2d");
+      if(pieChart) pieChart.destroy();
+      pieChart = new Chart(pieCtx, { type:'pie', data:{ labels:['Fake Frames','Real Frames'], datasets:[{ data:[data.fake_count||0, data.real_count||0], backgroundColor:['#ef4444','#10b981'] }]}, options:{plugins:{legend:{position:'bottom'}}} });
+
+      const lineCtx = document.getElementById("lineChart").getContext("2d");
+      if(lineChart) lineChart.destroy();
+      lineChart = new Chart(lineCtx, { type:'line', data:{ labels:frames, datasets:[ {label:"Fake Confidence", data:confFake, borderColor:"#ef4444", fill:false, tension:0.15 }, {label:"Real Confidence", data:confReal, borderColor:"#10b981", fill:false, tension:0.15 } ] }, options:{scales:{x:{title:{display:true,text:"Frame Number"}}, y:{min:0,max:1,title:{display:true,text:"Confidence"}}}, plugins:{legend:{position:'bottom'}} } });
+
+      const timelineCtx = document.getElementById("timelineChart").getContext("2d");
+      if(timelineChart) timelineChart.destroy();
+      const bg = (labels||[]).map(l => l==="FAKE" ? "#ef4444" : "#10b981");
+      timelineChart = new Chart(timelineCtx, { type:'bar', data:{ labels:frames, datasets:[{ data: frames.map(()=>1), backgroundColor: bg, barPercentage:1.0, categoryPercentage:1.0 }] }, options:{ indexAxis:'x', scales:{ x:{display:true,title:{display:true,text:"Frame Number"}}, y:{display:false}}, plugins:{legend:{display:false}, tooltip:{enabled:false}} } });
+
+      if(data.manipulated_merged_url){
+        const mv = document.getElementById('mergedVideoEarly');
+        mv.src = data.manipulated_merged_url;
+        try { mv.load(); } catch(e){}
+      }
+
+    } catch (err) {
+      console.error(err);
+      stopDynamicStatus();
+      statusText.innerText = "❌ Error";
+      logsEl.innerText = err.message || "Unexpected error. See browser console.";
+      showToast("Network error: " + err.message, "error");
+    }
+  };
+
+  // ---------- Full processing UI logic ----------
+  const videoInputFull = document.getElementById('videoInputFull');
+  const analyzeFullBtn = document.getElementById('analyzeFullBtn');
+  const resetFullBtn = document.getElementById('resetFullBtn');
+  const logsFull = document.getElementById('logsFull');
+  const progressBarFull = document.getElementById('progressBarFull');
+  const statusTextFull = document.getElementById('statusTextFull');
+  const countsFull = document.getElementById('countsFull');
+  const summaryTextFull = document.getElementById('summaryTextFull');
+  const csvLinkFull = document.getElementById('csvLinkFull');
+  const segmentsCsvLink = document.getElementById('segmentsCsvLink');
+  const mergedVideoArea = document.getElementById('mergedVideoArea');
+  const mergedVideo = document.getElementById('mergedVideo');
+  const segmentsList = document.getElementById('segmentsList');
+  const thumbGrid = document.getElementById('thumbGrid');
+  const finalDecisionEl = document.getElementById('finalDecision');
+  const resultHighlight = document.getElementById('resultHighlight');
+  const finalDecisionIcon = document.getElementById('finalDecisionIcon');
+  const statsDashboardFull = document.getElementById('statsDashboardFull');
+  const statTotalFramesFull = document.getElementById('statTotalFramesFull');
+  const statFakeFramesFull = document.getElementById('statFakeFramesFull');
+  const statRealFramesFull = document.getElementById('statRealFramesFull');
+  const statFakeRatioFull = document.getElementById('statFakeRatioFull');
+
+  let pieChartFull=null, lineChartFull=null, timelineChartFull=null;
+
+  function resetFullUI(){
+    logsFull.innerText = 'No analysis yet. Click Analyze Full Video to start.';
+    progressBarFull.style.width = '0%';
+    statusTextFull.innerText = 'Idle';
+    countsFull.innerText = 'Frames: 0   Fake: 0   Segments: 0';
+    summaryTextFull.innerText = 'No run yet';
+    csvLinkFull.style.display = 'none';
+    segmentsCsvLink.style.display = 'none';
+    mergedVideoArea.style.display = 'none';
+    mergedVideo.src = '';
+    segmentsList.innerHTML = '';
+    thumbGrid.innerHTML = '';
+    finalDecisionEl.innerText = '—';
+    finalDecisionEl.className = 'final-decision';
+    resultHighlight.classList.remove("fake","real");
+    finalDecisionIcon.innerText = "—";
+    statsDashboardFull.style.display = "none";
+    statTotalFramesFull.innerText = "0";
+    statFakeFramesFull.innerText = "0";
+    statRealFramesFull.innerText = "0";
+    statFakeRatioFull.innerText = "0%";
+    initStages("stagesFull");
+    if(pieChartFull) pieChartFull.destroy();
+    if(lineChartFull) lineChartFull.destroy();
+    if(timelineChartFull) timelineChartFull.destroy();
+  }
+
+  resetFullBtn.onclick = ()=>{ videoInputFull.value=''; resetFullUI(); };
+
+  /* STATS DASHBOARD UPDATE FUNCTION (FULL) */
+  function updateStatsFull(totalFrames, fakeFrames){
+    const realFrames = totalFrames - fakeFrames;
+    const fakeRatio = totalFrames > 0 ? Math.round((fakeFrames / totalFrames) * 100) : 0;
+    statTotalFramesFull.innerText = totalFrames;
+    statFakeFramesFull.innerText = fakeFrames;
+    statRealFramesFull.innerText = realFrames;
+    statFakeRatioFull.innerText = fakeRatio + "%";
+    statsDashboardFull.style.display = "grid";
+  }
+
+  analyzeFullBtn.onclick = async ()=> {
+    if(!videoInputFull.files || videoInputFull.files.length===0){ showToast("Please choose a video file first", "error"); return; }
+    resetFullUI();
+    const file = videoInputFull.files[0];
+    const form = new FormData(); form.append('video', file);
+
+    statusTextFull.innerText = '📤 Uploading...';
+    progressBarFull.style.width = '10%';
+    try {
+      startDynamicStatusFull();
+      updateStages("stagesFull", "uploading");
+      const data = await startAnalysisJob("full", file, (evt) => {
+        updateStages("stagesFull", evt.stage);
+        statusTextFull.innerText = `${evt.message || evt.stage} (${Math.round(evt.percent || 0)}%)`;
+        progressBarFull.style.width = `${Math.max(10, Math.round(evt.percent || 0))}%`;
+      });
+
+      statusTextFull.innerText = '✅ Complete!';
+      updateStages("stagesFull", "completed");
+      stopDynamicStatusFull();
+      progressBarFull.style.width = '100%';
+      
+      logsFull.innerText = (data.logs || []).join('\n');
+      summaryTextFull.innerText = data.summary_text || '';
+
+      const frames = data.processed_face_frames || 0;
+      const fake_frames = data.fake_count || 0;
+      const segments_count = (data.segment_info || []).length;
+      countsFull.innerText = `Frames: ${frames}   Fake: ${fake_frames}   Segments: ${segments_count}`;
+      updateStatsFull(frames, fake_frames);
+
+      if(data.final_decision === "FAKE"){
+        finalDecisionEl.innerText = "FAKE";
+        finalDecisionEl.classList.remove('real');
+        finalDecisionEl.classList.add('fake');
+        resultHighlight.classList.remove("real");
+        resultHighlight.classList.add("fake");
+        finalDecisionIcon.innerText = "⚠️";
+        showToast("⚠️ Video contains deepfake content!", "error");
+      } else if(data.final_decision === "REAL"){
+        finalDecisionEl.innerText = "REAL";
+        finalDecisionEl.classList.remove('fake');
+        finalDecisionEl.classList.add('real');
+        resultHighlight.classList.remove("fake");
+        resultHighlight.classList.add("real");
+        finalDecisionIcon.innerText = "✓";
+        showToast("✓ Video appears authentic", "success");
+      } else {
+        finalDecisionEl.innerText = data.final_decision || "—";
+        finalDecisionEl.className = 'final-decision';
+      }
+
+      if(data.csv_url){
+        csvLinkFull.style.display = 'inline-block';
+        csvLinkFull.href = data.csv_url;
+        csvLinkFull.innerText = '📥 Download per-frame CSV';
+      }
+      if(data.segments_csv_url){
+        segmentsCsvLink.style.display = 'inline-block';
+        segmentsCsvLink.href = data.segments_csv_url;
+        segmentsCsvLink.innerText = '📥 Download segments CSV';
+      }
+
+      if(data.manipulated_merged_url){
+        mergedVideoArea.style.display = 'block';
+        mergedVideo.src = data.manipulated_merged_url;
+        try { mergedVideo.load(); } catch(e) {}
+      } else {
+        mergedVideoArea.style.display = 'none';
+      }
+
+      segmentsList.innerHTML = '';
+      if(data.segment_info && data.segment_urls){
+        data.segment_info.forEach((seg, idx) => {
+          const el = document.createElement('div');
+          el.style.marginBottom = '16px';
+          el.className = 'segment';
+          const title = document.createElement('div');
+          title.style.fontWeight = '700';
+          title.style.marginBottom = '8px';
+          title.innerText = `📹 ${seg.filename} (frames ${seg.start_frame}–${seg.end_frame})`;
+          const vid = document.createElement('video');
+          vid.controls = true;
+          vid.preload = 'metadata';
+          vid.playsInline = true;
+          vid.src = data.segment_urls[idx];
+          try { vid.load(); } catch(e){}
+          el.appendChild(title);
+          el.appendChild(vid);
+          segmentsList.appendChild(el);
+        });
+      } else {
+        segmentsList.innerHTML = '<div class="small">✓ No manipulated segments detected</div>';
+      }
+
+      thumbGrid.innerHTML = '';
+      if(data.thumbnail_urls && data.thumbnail_urls.length>0){
+        data.thumbnail_urls.forEach(url=>{
+          const img = document.createElement('img');
+          img.src = url;
+          img.loading = 'lazy';
+          thumbGrid.appendChild(img);
+        });
+      } else {
+        thumbGrid.innerHTML = '<div class="small">No suspicious frames extracted</div>';
+      }
+
+      const frame_indices = data.frame_indices || [];
+      const confFake = data.conf_fake_values || [];
+      const confReal = data.conf_real_values || [];
+      const labels = data.labels || [];
+
+      const pieCtx = document.getElementById('pieChartFull').getContext('2d');
+      if(pieChartFull) pieChartFull.destroy();
+      pieChartFull = new Chart(pieCtx, {
+        type: 'pie',
+        data: { labels: ['Fake Frames','Real Frames'], datasets: [{ data: [data.fake_count||0, data.real_count||0], backgroundColor: ['#ef4444','#10b981'] }]},
+        options: { plugins: { legend: { position: 'bottom' } } }
+      });
+
+      const lineCtx = document.getElementById('lineChartFull').getContext('2d');
+      if(lineChartFull) lineChartFull.destroy();
+      lineChartFull = new Chart(lineCtx, {
+        type: 'line',
+        data: { labels: frame_indices, datasets: [
+          { label: 'Fake Confidence', data: confFake, borderColor: '#ef4444', fill:false, tension:0.12 },
+          { label: 'Real Confidence', data: confReal, borderColor: '#10b981', fill:false, tension:0.12 }
+        ]},
+        options: { scales: { x: { title: { display: true, text: 'Frame Number' } }, y: { min:0, max:1, title: { display:true, text: 'Confidence' } } }, plugins:{legend:{position:'bottom'}} }
+      });
+
+      const timelineCtx = document.getElementById('timelineChartFull').getContext('2d');
+      if(timelineChartFull) timelineChartFull.destroy();
+      const bg = (labels||[]).map(l => l === 'FAKE' ? '#ef4444' : (l === 'SKIP' ? '#666' : '#10b981'));
+      timelineChartFull = new Chart(timelineCtx, {
+        type: 'bar',
+        data: { labels: frame_indices, datasets: [{ data: frame_indices.map(()=>1), backgroundColor: bg, barPercentage:1.0, categoryPercentage:1.0 }]},
+        options: { indexAxis: 'x', scales: { x:{ display:true, title:{display:true, text:'Frame Number'}}, y:{ display:false } }, plugins:{ legend:{ display:false }, tooltip:{ enabled:false } } }
+      });
+
+    } catch (err) {
+      console.error(err);
+      stopDynamicStatusFull();
+      statusTextFull.innerText = '❌ Error';
+      logsFull.innerText = err.message || 'Unexpected error. See browser console.';
+      showToast("Network error: " + err.message, "error");
+    }
+  };
+
+  // init
+  resetUI();
+  resetFullUI();
+</script>
+</body>
+</html>

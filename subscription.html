@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Pricing Plans - Deepfake Defender</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root {
+      --bg: #0a0e27;
+      --bg-dark: #050812;
+      --card: #0f1423;
+      --accent: #10b981;
+      --accent2: #f97316;
+      --muted: #94a3b8;
+      --glass: rgba(255,255,255,0.04);
+      --header-bg: linear-gradient(90deg, rgba(10,14,39,0.95), rgba(5,8,18,0.95));
+      --maxw: 1200px;
+    }
+    * { box-sizing: border-box; font-family: 'Segoe UI', system-ui, Inter, Roboto, Arial, sans-serif; }
+    body { margin: 0; background: linear-gradient(180deg, #0a0e27 0%, #050812 100%); color: #f1f5f9; min-height: 100vh; }
+    
+    header.site-header {
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      background: var(--header-bg);
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      backdrop-filter: blur(10px);
+      box-shadow: 0 10px 40px rgba(0,0,0,0.4);
+    }
+    .header-inner {
+      max-width: var(--maxw);
+      margin: 0 auto;
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .brand { display: flex; align-items: center; gap: 14px; cursor: pointer; }
+    .logo { width: 48px; height: 48px; border-radius: 14px; background: transparent; display: flex; align-items: center; justify-content: center; padding: 4px; box-shadow: 0 8px 20px rgba(16,185,129,0.2); }
+    .logo img { width: 100%; height: 100%; object-fit: contain; border-radius: 10px; }
+    .brand-text h1 { margin: 0; font-size: 18px; font-weight: 800; letter-spacing: -0.5px; }
+    .brand-text p { margin: 2px 0 0 0; font-size: 12px; color: var(--muted); }
+    
+    .nav-btn { background: transparent; border: 0; color: rgba(255,255,255,0.85); padding: 10px 16px; border-radius: 10px; font-weight: 600; cursor: pointer; font-size: 14px; transition: all 200ms ease; }
+    .nav-btn:hover { background: rgba(16,185,129,0.1); color: var(--accent); transform: translateY(-2px); }
+    
+    .container { max-width: var(--maxw); margin: 0 auto; padding: 40px 24px; }
+    
+    .section-title { text-align: center; margin-bottom: 48px; }
+    .section-title h1 { margin: 0 0 12px 0; font-size: 40px; font-weight: 800; letter-spacing: -1px; }
+    .section-title p { margin: 0; color: var(--muted); font-size: 16px; }
+    
+    .pricing-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px; margin-bottom: 40px; }
+    .plan-card { 
+      background: var(--card);
+      border-radius: 14px;
+      padding: 32px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.4);
+      border: 1px solid rgba(255,255,255,0.05);
+      display: flex;
+      flex-direction: column;
+      transition: all 200ms ease;
+      position: relative;
+    }
+    .plan-card:hover { border-color: rgba(16,185,129,0.2); transform: translateY(-4px); }
+    .plan-card.featured { border-width: 2px; border-color: var(--accent); transform: scale(1.05); }
+    
+    .plan-badge { 
+      position: absolute;
+      top: -12px;
+      left: 20px;
+      background: linear-gradient(135deg, var(--accent), #06b6d4);
+      color: #fff;
+      padding: 4px 14px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+    
+    .plan-name { margin: 0 0 8px 0; font-size: 20px; font-weight: 700; color: rgba(255,255,255,0.9); }
+    .plan-price { font-size: 32px; font-weight: 800; margin: 16px 0; }
+    .plan-price small { font-size: 14px; color: var(--muted); font-weight: 400; }
+    .plan-desc { margin: 16px 0 24px 0; padding: 16px; background: rgba(16,185,129,0.08); border-radius: 8px; border: 1px solid rgba(16,185,129,0.15); font-size: 13px; }
+    
+    .plan-features { list-style: none; margin: 0 0 24px 0; padding: 0; flex: 1; }
+    .plan-features li { padding: 10px 0; font-size: 13px; color: var(--muted); border-bottom: 1px solid rgba(255,255,255,0.05); }
+    .plan-features li:last-child { border-bottom: none; }
+    .plan-features li:before { content: "✓ "; color: var(--accent); font-weight: 700; margin-right: 8px; }
+    .plan-features li.unavailable:before { content: "✗ "; color: #666; }
+    .plan-features li.unavailable { color: #666; }
+    
+    .btn {
+      padding: 12px 24px;
+      border: none;
+      border-radius: 8px;
+      font-weight: 700;
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 200ms ease;
+      text-align: center;
+      width: 100%;
+    }
+    .btn.primary {
+      background: linear-gradient(135deg, var(--accent), #06b6d4);
+      color: #fff;
+      box-shadow: 0 8px 20px rgba(16,185,129,0.2);
+    }
+    .btn.primary:hover { transform: translateY(-2px); box-shadow: 0 12px 30px rgba(16,185,129,0.3); }
+    .btn.secondary {
+      background: transparent;
+      border: 1.5px solid var(--accent);
+      color: var(--accent);
+    }
+    .btn.secondary:hover { background: rgba(16,185,129,0.1); }
+    .btn.danger {
+      background: linear-gradient(135deg, #f97316, #ea580c);
+      color: #fff;
+      box-shadow: 0 8px 20px rgba(249,115,22,0.2);
+    }
+    .btn.danger:hover { transform: translateY(-2px); box-shadow: 0 12px 30px rgba(249,115,22,0.3); }
+    
+    .faq-section { margin-top: 60px; }
+    .faq-title { text-align: center; font-size: 28px; font-weight: 800; margin: 0 0 32px 0; }
+    .faq-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+    .faq-item { background: var(--card); padding: 20px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.05); }
+    .faq-item h4 { margin: 0 0 8px 0; font-size: 14px; font-weight: 700; color: var(--accent); }
+    .faq-item p { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.6; }
+    
+    @media (max-width: 768px) {
+      .section-title h1 { font-size: 28px; }
+      .plan-card.featured { transform: scale(1); }
+      .pricing-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <div class="brand" onclick="window.location.href='index.html';">
+        <div class="logo"><img src="logo11.png" alt="Deepfake Defender Logo"></div>
+        <div class="brand-text">
+          <h1>Deepfake Defender</h1>
+          <p>AI-Powered Video Authenticity Detection</p>
+        </div>
+      </div>
+      <button class="nav-btn" onclick="window.location.href='index.html';">← Back to App</button>
+    </div>
+  </header>
+
+  <div class="container">
+    <div class="section-title">
+      <h1>Simple, Transparent Pricing</h1>
+      <p>Choose the plan that fits your needs. Scale up whenever you're ready.</p>
+    </div>
+
+    <div class="pricing-grid">
+      <!-- Free Plan -->
+      <div class="plan-card">
+        <h3 class="plan-name">Free Plan</h3>
+        <div class="plan-price">$0<small>/month</small></div>
+        <div class="plan-desc">Perfect for getting started and learning</div>
+        <ul class="plan-features">
+          <li>5 video analyses per month</li>
+          <li>Early detection only</li>
+          <li>720p video support</li>
+          <li class="unavailable">Full video processing</li>
+          <li class="unavailable">Batch processing</li>
+          <li class="unavailable">API access</li>
+          <li class="unavailable">Priority support</li>
+        </ul>
+        <button class="btn secondary">Get Started Free</button>
+      </div>
+
+      <!-- Pro Plan (Featured) -->
+      <div class="plan-card featured">
+        <div class="plan-badge">MOST POPULAR</div>
+        <h3 class="plan-name">Pro Plan</h3>
+        <div class="plan-price" style="color: var(--accent);">$9<small>/month</small></div>
+        <div class="plan-desc" style="background: rgba(16,185,129,0.12); border-color: rgba(16,185,129,0.2);">Best for professionals and researchers</div>
+        <ul class="plan-features">
+          <li>100 video analyses per month</li>
+          <li>Early + Full video processing</li>
+          <li>1080p video support</li>
+          <li>Download detailed reports</li>
+          <li>Manipulated segment extraction</li>
+          <li class="unavailable">Batch processing</li>
+          <li class="unavailable">API access</li>
+        </ul>
+        <button class="btn primary">Subscribe Now</button>
+      </div>
+
+      <!-- Premium Plan -->
+      <div class="plan-card">
+        <h3 class="plan-name" style="color: var(--accent2);">Premium Plan</h3>
+        <div class="plan-price" style="color: var(--accent2);">$29<small>/month</small></div>
+        <div class="plan-desc" style="background: rgba(249,115,22,0.1); border-color: rgba(249,115,22,0.15);">For power users and enterprises</div>
+        <ul class="plan-features">
+          <li>Unlimited video analyses</li>
+          <li>Early + Full video processing</li>
+          <li>4K video support</li>
+          <li>Batch processing (10 videos at once)</li>
+          <li>Advanced API access</li>
+          <li>Custom model fine-tuning</li>
+          <li>24/7 priority support</li>
+        </ul>
+        <button class="btn danger">Subscribe Now</button>
+      </div>
+    </div>
+
+    <!-- FAQ Section -->
+    <div class="faq-section">
+      <h2 class="faq-title">Frequently Asked Questions</h2>
+      <div class="faq-grid">
+        <div class="faq-item">
+          <h4>Can I cancel anytime?</h4>
+          <p>Yes, you can cancel your subscription at any time. You'll have access until the end of your billing cycle.</p>
+        </div>
+        <div class="faq-item">
+          <h4>Do you offer refunds?</h4>
+          <p>We offer a 30-day money-back guarantee if you're not satisfied with our service.</p>
+        </div>
+        <div class="faq-item">
+          <h4>Is there a free trial?</h4>
+          <p>Yes! All plans come with a 7-day free trial. No credit card required to start.</p>
+        </div>
+        <div class="faq-item">
+          <h4>What happens if I exceed my quota?</h4>
+          <p>We'll notify you when you're approaching your limit. You can upgrade anytime to get more analyses.</p>
+        </div>
+        <div class="faq-item">
+          <h4>Do you offer enterprise plans?</h4>
+          <p>Yes! For large-scale deployments, contact our sales team for custom pricing and features.</p>
+        </div>
+        <div class="faq-item">
+          <h4>Can I upgrade or downgrade plans?</h4>
+          <p>Absolutely! You can change your plan at any time. Changes take effect on your next billing date.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Simple button interactions
+    document.querySelectorAll('.btn').forEach(btn => {
+      btn.addEventListener('click', async function() {
+        if (this.classList.contains('danger') || this.classList.contains('primary')) {
+          const auth = await fetch("/api/auth/me").then(r => r.json()).catch(() => ({user:null}));
+          if (auth.user) {
+            alert("Subscription checkout is not connected yet. Your account is ready for plan upgrades once billing is configured.");
+          } else {
+            alert("Please sign up or log in to upgrade your plan.");
+            window.location.href = "signup.html";
+          }
+        } else if (this.classList.contains('secondary')) {
+          window.location.href = "index.html";
+        }
+      });
+    });
+  </script>
+</body>
+</html>

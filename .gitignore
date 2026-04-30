@@ -1,0 +1,24 @@
+__pycache__/
+*.py[cod]
+*.pyo
+*.log
+
+# Local runtime data
+instance/
+uploads/
+outputs/
+
+# Large model checkpoint: keep locally or host separately.
+model_convnext.pth
+
+# Cursor / editor local state
+.cursor/
+.vscode/
+
+# Temporary QA files
+*_tmp.py
+
+# Backups generated during refactor. Keep the original pipeline backup because
+# the wrapper imports it to preserve the previous detection code exactly.
+backups/*.html.bak
+backups/*.txt

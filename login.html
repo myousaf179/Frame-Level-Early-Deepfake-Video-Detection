@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Login - Deepfake Defender</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root{--bg:#070b1d;--card:#0f172a;--line:rgba(148,163,184,.18);--text:#f8fafc;--muted:#94a3b8;--accent:#10b981;--cyan:#06b6d4;--danger:#ef4444}
+    *{box-sizing:border-box;font-family:Segoe UI,system-ui,Inter,Arial,sans-serif}
+    body{margin:0;min-height:100vh;color:var(--text);background:radial-gradient(circle at 20% 10%,rgba(16,185,129,.16),transparent 32%),linear-gradient(180deg,#0a0e27,#050812)}
+    header{position:sticky;top:0;z-index:5;background:rgba(5,8,18,.78);backdrop-filter:blur(18px);border-bottom:1px solid var(--line)}
+    .header-inner{max-width:1180px;margin:auto;padding:16px 22px;display:flex;align-items:center;justify-content:space-between;gap:18px}
+    .brand{display:flex;align-items:center;gap:12px;text-decoration:none;color:var(--text)}
+    .brand img{width:44px;height:44px;border-radius:12px;box-shadow:0 0 24px rgba(16,185,129,.25)}
+    .brand h1{font-size:18px;margin:0}.brand p{margin:2px 0 0;color:var(--muted);font-size:12px}
+    .nav-link{color:var(--text);text-decoration:none;border:1px solid var(--line);padding:10px 14px;border-radius:10px;background:rgba(255,255,255,.03)}
+    main{max-width:980px;margin:52px auto;padding:0 18px;display:grid;grid-template-columns:1fr 430px;gap:28px;align-items:center}
+    .hero{padding:34px;border-radius:24px;border:1px solid var(--line);background:rgba(15,23,42,.48);box-shadow:0 20px 60px rgba(0,0,0,.35)}
+    .hero h2{font-size:40px;line-height:1.1;margin:0 0 14px}.hero p{color:var(--muted);line-height:1.7;margin:0 0 18px}
+    .chips{display:flex;gap:10px;flex-wrap:wrap}.chip{font-size:12px;color:#a7f3d0;background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.25);padding:8px 10px;border-radius:999px}
+    .card{padding:30px;border-radius:22px;background:rgba(15,23,42,.86);border:1px solid var(--line);box-shadow:0 20px 70px rgba(0,0,0,.38)}
+    h2{margin:0 0 8px;font-size:28px}.subtitle{margin:0 0 24px;color:var(--muted)}
+    label{display:block;margin:16px 0 8px;color:#dbeafe;font-weight:650;font-size:13px}
+    input{width:100%;border:1px solid var(--line);background:rgba(255,255,255,.05);color:var(--text);padding:13px 14px;border-radius:12px;font-size:14px;outline:none}
+    input:focus{border-color:var(--accent);box-shadow:0 0 0 4px rgba(16,185,129,.12)}
+    .btn{width:100%;border:0;border-radius:12px;padding:13px 16px;margin-top:18px;font-weight:800;cursor:pointer;color:#fff;background:linear-gradient(135deg,var(--accent),var(--cyan));box-shadow:0 14px 28px rgba(16,185,129,.22)}
+    .btn.secondary{background:transparent;border:1px solid var(--line);box-shadow:none;color:#dbeafe}
+    .msg{display:none;margin:14px 0 0;padding:12px;border-radius:12px;font-size:13px;border:1px solid}
+    .msg.error{display:block;color:#fecaca;background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.35)}
+    .msg.success{display:block;color:#bbf7d0;background:rgba(16,185,129,.12);border-color:rgba(16,185,129,.35)}
+    .links{text-align:center;color:var(--muted);font-size:13px;margin-top:18px}.links a{color:#5eead4;text-decoration:none}
+    @media(max-width:860px){main{grid-template-columns:1fr}.hero h2{font-size:30px}.hero{display:none}}
+  </style>
+</head>
+<body>
+  <header><div class="header-inner">
+    <a class="brand" href="index.html"><img src="/static/logo11.png" alt="Logo"><span><h1>Deepfake Defender</h1><p>AI video authenticity platform</p></span></a>
+    <a class="nav-link" href="index.html">Back to App</a>
+  </div></header>
+  <main>
+    <section class="hero">
+      <h2>Secure access for professional video forensics.</h2>
+      <p>Sign in to save analysis history, unlock full processing, and manage your Deepfake Defender workspace.</p>
+      <div class="chips"><span class="chip">Encrypted passwords</span><span class="chip">Session tracking</span><span class="chip">Admin ready</span></div>
+    </section>
+    <section class="card">
+      <h2>Welcome Back</h2>
+      <p class="subtitle">Sign in with your registered email.</p>
+      <form id="loginForm">
+        <label for="email">Email Address</label>
+        <input id="email" type="email" autocomplete="email" placeholder="you@example.com" required>
+        <label for="password">Password</label>
+        <input id="password" type="password" autocomplete="current-password" placeholder="Enter your password" required>
+        <button class="btn" type="submit">Sign In</button>
+        <button class="btn secondary" type="button" id="googleBtn">Continue with Google</button>
+        <div id="msg" class="msg"></div>
+      </form>
+      <div class="links">
+        <p><a href="forgot-password.html">Forgot password?</a></p>
+        <p>New here? <a href="signup.html">Create an account</a></p>
+      </div>
+    </section>
+  </main>
+  <script>
+    const msg = document.getElementById("msg");
+    function show(message, type="error"){ msg.className = "msg " + type; msg.textContent = message; }
+    document.getElementById("loginForm").addEventListener("submit", async (e)=>{
+      e.preventDefault();
+      show("Signing in...", "success");
+      const resp = await fetch("/api/auth/login", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({
+        email: email.value.trim(), password: password.value
+      })});
+      const data = await resp.json().catch(()=>({error:"Unexpected server response"}));
+      if(!resp.ok || !data.ok){ show(data.error || "Login failed"); return; }
+      show("Login successful. Redirecting...", "success");
+      setTimeout(()=>{ window.location.href = "index.html"; }, 600);
+    });
+    document.getElementById("googleBtn").addEventListener("click", async ()=>{
+      const resp = await fetch("/api/auth/google/start");
+      const data = await resp.json();
+      show(data.error || "Google login is not configured yet.");
+    });
+  </script>
+</body>
+</html>
