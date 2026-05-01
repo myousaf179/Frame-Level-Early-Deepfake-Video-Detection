@@ -2,6 +2,7 @@ flask
 flask-sqlalchemy
 torch
 torchvision
+torchaudio
 facenet-pytorch
 timm
 opencv-python
@@ -10,11 +11,3 @@ scikit-image
 PyYAML
 qudida
 numpy
-
-
-python -m pip install --upgrade pip setuptools wheel
-
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-
-pip install flask facenet-pytorch timm opencv-python albumentations scikit-image PyYAML qudida numpy
-winget install ffmpeg
