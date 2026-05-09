@@ -180,22 +180,17 @@ Normal email/password login works fully. Google OAuth can be connected later usi
 
 ## Important Model File Note
 
-The trained checkpoint is required at project root:
+The trained checkpoint file is not included in this repository because of its large size.
 
-```text
-model_convnext.pth
-```
+Download the trained model from Google Drive:
 
-This file is not included in the GitHub repository because it is large and GitHub LFS quota was exceeded during upload. To run inference, place your trained `model_convnext.pth` file in the same folder as `app.py`.
+[Download model_convnext.pth](https://drive.google.com/file/d/1OQoFQOha_3I2osNnKSwhbKVWqn2KYtXt/view?usp=sharing)
 
-Expected location:
+After downloading, place the file in the project root:
 
-```text
 Frame-Level-Early-Deepfake-Video-Detection/
   app.py
   model_convnext.pth
-```
-
 ## Installation
 
 ### 1. Clone Repository
